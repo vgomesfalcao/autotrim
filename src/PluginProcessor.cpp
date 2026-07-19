@@ -16,7 +16,7 @@ namespace
             NormalisableRange<float>(-60.0f, 0.0f, 0.1f), dsp::kDefaultTargetDb,
             AudioParameterFloatAttributes().withLabel("dBFS")));
         layout.add(std::make_unique<AudioParameterFloat>(
-            ParameterID { "trim", 1 }, "Trim",
+            ParameterID { "trim", 1 }, "Ganho",
             NormalisableRange<float>(-dsp::kTrimParamRangeDb, dsp::kTrimParamRangeDb, 0.1f), 0.0f,
             AudioParameterFloatAttributes().withLabel("dB")));
         layout.add(std::make_unique<AudioParameterBool>(

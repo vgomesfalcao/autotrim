@@ -196,8 +196,8 @@ void StatusStrip::paint(juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
 
-    // TRIM chip: the total gain currently applied, always readable at a glance.
-    auto chip = r.removeFromLeft(150.0f);
+    // GANHO chip: the total gain currently applied, always readable at a glance.
+    auto chip = r.removeFromLeft(162.0f);
     g.setColour(colours::card);
     g.fillRoundedRectangle(chip, 8.0f);
     g.setColour(colours::cardOutline);
@@ -206,7 +206,7 @@ void StatusStrip::paint(juce::Graphics& g)
     g.setColour(colours::subtext);
     g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold))
                   .withExtraKerningFactor(0.12f));
-    g.drawText("TRIM", chipInner.removeFromLeft(40.0f), juce::Justification::centredLeft);
+    g.drawText("GANHO", chipInner.removeFromLeft(52.0f), juce::Justification::centredLeft);
     g.setColour(colours::accent);
     g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
     g.drawText(formatDb(trimTotal), chipInner, juce::Justification::centredRight);
@@ -294,11 +294,14 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(sensCaption, "Sensibilidade");
     styleCaption(meterCaption, "Entrada");
     styleCaption(outMeterCaption, utf8("Saída"));
-    styleCaption(targetCaption, "Target de pico");
-    styleCaption(trimCaption, "Trim");
+    styleCaption(targetCaption, "Target");
+    styleCaption(trimCaption, "Ganho");
     styleCaption(sensCaption, "Sensibilidade");
     styleSection(sectionLabel, utf8("Configuração inicial"));
-    targetCaption.setJustificationType(juce::Justification::centred);
+    // Ganho is the day-to-day control: bigger, brighter caption on the knob.
+    trimCaption.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+    trimCaption.setColour(juce::Label::textColourId, colours::text);
+    trimCaption.setJustificationType(juce::Justification::centred);
 
     meter.setTickVisible(false); // input level needs no moving mark
 
@@ -338,8 +341,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                                 dsp::profileFor(index).sensitivityDb);
     };
 
-    styleKnob(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
-    styleCompactBar(trimSlider, " dB", 0.0);
+    styleKnob(trimSlider, " dB", 0.0);
+    styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
     advancedButton.setButtonText(utf8("▸  Avançado"));
@@ -349,7 +352,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     {
         advancedOpen = ! advancedOpen;
         advancedButton.setButtonText(advancedOpen ? utf8("▾  Avançado") : utf8("▸  Avançado"));
-        for (auto* c : { (juce::Component*) &trimCaption, (juce::Component*) &trimSlider,
+        for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
                          (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
             c->setVisible(advancedOpen);
         resized();
@@ -372,7 +375,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
         addAndMakeVisible(c);
 
     // "Avançado" starts collapsed.
-    for (auto* c : { (juce::Component*) &trimCaption, (juce::Component*) &trimSlider,
+    for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
                      (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
         c->setVisible(false);
 }
@@ -406,9 +409,9 @@ void ChannelView::resized()
     card.removeFromTop(10);
 
     auto knobRow = card.removeFromTop(112);
-    auto targetCol = knobRow.removeFromLeft(knobRow.getWidth() / 2);
-    targetCaption.setBounds(targetCol.removeFromTop(16));
-    targetSlider.setBounds(targetCol);
+    auto gainCol = knobRow.removeFromLeft(knobRow.getWidth() / 2);
+    trimCaption.setBounds(gainCol.removeFromTop(18));
+    trimSlider.setBounds(gainCol);
     auto rightCol = knobRow.withTrimmedLeft(10);
     profileCaption.setBounds(rightCol.removeFromTop(16));
     profileBox.setBounds(rightCol.removeFromTop(28));
@@ -422,8 +425,8 @@ void ChannelView::resized()
     {
         card.removeFromTop(8);
         auto compactRow = card.removeFromTop(24);
-        trimCaption.setBounds(compactRow.removeFromLeft(36));
-        trimSlider.setBounds(compactRow.removeFromLeft(96));
+        targetCaption.setBounds(compactRow.removeFromLeft(52));
+        targetSlider.setBounds(compactRow.removeFromLeft(96));
         compactRow.removeFromLeft(20);
         sensCaption.setBounds(compactRow.removeFromLeft(92));
         sensSlider.setBounds(compactRow.removeFromLeft(96));
