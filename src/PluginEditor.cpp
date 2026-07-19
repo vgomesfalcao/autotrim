@@ -305,10 +305,6 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
         if (index < 0)
             return;
         presets::apply(*proc.shared, presets::all()[(size_t) index]);
-        {
-            const juce::ScopedLock lock(proc.shared->nameLock);
-            nameEditor.setText(proc.shared->name, false);
-        }
         presetBox.setSelectedId(0, juce::dontSendNotification);
     };
 

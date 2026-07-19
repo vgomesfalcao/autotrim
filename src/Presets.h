@@ -1,5 +1,5 @@
-// Channel-type presets ("AudioLive Ganhos" table): picking one fills in the
-// channel name and its peak target.
+// Channel-type presets ("AudioLive Ganhos" table): picking one sets the peak
+// target, rider profile and sensitivity default — never the channel name.
 #pragma once
 
 #include "Dsp.h"
@@ -55,10 +55,6 @@ inline void writeParam(juce::RangedAudioParameter* param, float value)
 
 inline void apply(ChannelShared& ch, const Preset& preset)
 {
-    {
-        const juce::ScopedLock lock(ch.nameLock);
-        ch.name = utf8(preset.name);
-    }
     writeParam(ch.targetParam, preset.targetDb);
     writeParam(ch.profileParam, (float) preset.profile);
     writeParam(ch.sensParam, dsp::profileFor(preset.profile).sensitivityDb);
