@@ -70,12 +70,12 @@ public:
 
     juce::Font getComboBoxFont(juce::ComboBox&) override
     {
-        return juce::Font(juce::FontOptions(15.0f));
+        return juce::Font(juce::FontOptions(16.0f));
     }
 
     juce::Font getPopupMenuFont() override
     {
-        return juce::Font(juce::FontOptions(15.0f));
+        return juce::Font(juce::FontOptions(16.0f));
     }
 
     // Rotary sliders get a big bold readout — the value must be legible at a
@@ -109,7 +109,9 @@ public:
             g.setColour(colours::cardOutline);
             g.drawRoundedRectangle(r.reduced(0.5f), 9.0f, 1.0f);
             g.setColour(colours::accent);
-            g.setFont(label.getFont());
+            // Explicit display size: the label's own font can lag behind
+            // look-and-feel changes, so never trust it here.
+            g.setFont(juce::Font(juce::FontOptions(36.0f, juce::Font::bold)));
             g.drawText(label.getText(), label.getLocalBounds().reduced(8, 0),
                        juce::Justification::centred);
             return;

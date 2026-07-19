@@ -68,10 +68,12 @@ namespace
         slider.setColour(juce::Slider::textBoxTextColourId, colours::text);
     }
 
-    // Small uppercase section header with letter spacing.
+    // Small uppercase section header with letter spacing. Pass the text
+    // already uppercased: juce::String::toUpperCase() leaves accented
+    // characters (ç, ã) lowercase.
     void styleSection(juce::Label& label, const juce::String& text)
     {
-        label.setText(text.toUpperCase(), juce::dontSendNotification);
+        label.setText(text, juce::dontSendNotification);
         label.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold))
                           .withExtraKerningFactor(0.12f));
         label.setColour(juce::Label::textColourId, colours::subtext);
@@ -278,7 +280,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(targetCaption, "Target");
     styleCaption(trimCaption, "Ganho");
     styleCaption(sensCaption, "Sensibilidade");
-    styleSection(sectionLabel, utf8("Configuração inicial"));
+    styleSection(sectionLabel, utf8("CONFIGURAÇÃO INICIAL"));
     // Ganho is the day-to-day control: bigger, brighter caption on the knob.
     trimCaption.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
     trimCaption.setColour(juce::Label::textColourId, colours::text);
@@ -286,10 +288,12 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
 
     meter.setTickVisible(false); // input level needs no moving mark
 
-    nameEditor.setFont(juce::Font(juce::FontOptions(16.0f)));
+    nameEditor.setFont(juce::Font(juce::FontOptions(17.0f)));
+    nameEditor.setJustification(juce::Justification::centredLeft);
     {
         const juce::ScopedLock lock(proc.shared->nameLock);
         nameEditor.setText(proc.shared->name, juce::dontSendNotification);
+        nameEditor.applyFontToAllText(juce::Font(juce::FontOptions(17.0f)));
     }
     nameEditor.onTextChange = [this]
     {
@@ -924,6 +928,10 @@ void AutoTrimEditor::rebuildView()
         }
     }
     addAndMakeVisible(*view);
+    // The view is created after setLookAndFeel, so slider textboxes were
+    // built while the default LookAndFeel was in effect; force a re-sync so
+    // the fonts and justification from our LookAndFeel actually apply.
+    view->sendLookAndFeelChange();
     resized();
 }
 } // namespace autotrim
