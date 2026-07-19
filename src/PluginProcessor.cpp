@@ -85,6 +85,16 @@ void AutoTrimProcessor::resetHitState()
     hitHistoryPos = 0;
     sinceHitS = 1000.0f;
     sinceCorrectionS = 1000.0f;
+    resetProtectionWindow();
+}
+
+void AutoTrimProcessor::resetProtectionWindow()
+{
+    protEventIndex = 0;
+    protEventCount = 0;
+    protOverActive = false;
+    protOverElapsedS = 0.0f;
+    protOffenderMaxLin = 0.0f;
 }
 
 bool AutoTrimProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -116,7 +126,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     bool hitCompleted = false;
 
     float offsetDb = shared->riderOffsetDb.load();
-    float totalDb = juce::jlimit(-maxTrim, maxTrim, trimDb + offsetDb);
+    const float protectDb = shared->protectOffsetDb.load();
+    float totalDb = juce::jlimit(-maxTrim, maxTrim, trimDb + offsetDb + protectDb);
     const float targetGain = automationOn ? dsp::dbToGain(totalDb) : 1.0f;
 
     auto* const* channelData = buffer.getArrayOfWritePointers();
@@ -180,6 +191,60 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         measEpoch = epoch;
         measPeak = 0.0f;
     }
+    // Overload protection: if the *output* peaks past target + margin too
+    // many times inside the window, cut the trim to protect the downstream
+    // chain — regardless of the rider being on. A sustained overload re-arms
+    // one event per rearm period so it is caught too.
+    if (automationOn && ! measuring)
+    {
+        protClockS += dt;
+        const float overThresholdLin =
+            dsp::dbToGain(shared->targetDb->load() + dsp::kProtectMarginDb);
+        if (blockPeakPost > overThresholdLin)
+        {
+            protOffenderMaxLin = juce::jmax(protOffenderMaxLin, blockPeakPost);
+            bool newEvent = false;
+            if (! protOverActive)
+            {
+                protOverActive = true;
+                protOverElapsedS = 0.0f;
+                newEvent = true;
+            }
+            else
+            {
+                protOverElapsedS += dt;
+                if (protOverElapsedS >= dsp::kProtectRearmS)
+                {
+                    protOverElapsedS = 0.0f;
+                    newEvent = true;
+                }
+            }
+
+            if (newEvent)
+            {
+                protEventTimes[protEventIndex] = protClockS;
+                protEventIndex = (protEventIndex + 1) % dsp::kProtectHitCount;
+                protEventCount = juce::jmin(protEventCount + 1, dsp::kProtectHitCount);
+                // After the increment, the next slot holds the oldest event.
+                const float oldest = protEventTimes[protEventIndex];
+                if (protEventCount >= dsp::kProtectHitCount
+                    && protClockS - oldest <= dsp::kProtectWindowS)
+                {
+                    const float cut =
+                        shared->targetDb->load() - dsp::gainToDb(protOffenderMaxLin);
+                    shared->protectOffsetDb.store(
+                        juce::jlimit(-dsp::kProtectMaxCutDb, 0.0f, protectDb + cut));
+                    shared->protectionActive.store(true);
+                    resetProtectionWindow();
+                }
+            }
+        }
+        else
+        {
+            protOverActive = false;
+        }
+    }
+
     // A stale rider correction must not keep acting after the mode is off.
     if (! riderOn && offsetDb != 0.0f)
     {

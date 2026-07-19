@@ -60,6 +60,16 @@ inline const RiderProfile& profileFor(int index)
     return kProfiles[std::clamp(index, 0, kNumProfiles - 1)];
 }
 
+// Overload protection: if output peaks exceed target by more than the margin
+// this many times inside the window, the trim is cut automatically (even with
+// the rider off) to protect the downstream plugin chain. Shown in red.
+constexpr float kProtectMarginDb = 3.0f;
+constexpr int kProtectHitCount = 5;
+constexpr float kProtectWindowS = 3.0f;
+constexpr float kProtectMaxCutDb = 12.0f;
+// A continuously-over passage counts one event per rearm period.
+constexpr float kProtectRearmS = 0.3f;
+
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
 constexpr float kHitRetriggerS = 0.100f; // minimum spacing between hits

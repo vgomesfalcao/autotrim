@@ -34,7 +34,9 @@ struct ChannelShared
     std::atomic<float> peakPreTrim { 0.0f };   // linear, decaying meter value
     std::atomic<float> peakPostTrim { 0.0f };  // linear, decaying, after trim
     std::atomic<float> measuredPeak { 0.0f };  // linear, max during measurement
-    std::atomic<float> riderOffsetDb { 0.0f }; // continuous-mode correction
+    std::atomic<float> riderOffsetDb { 0.0f };   // continuous-mode correction
+    std::atomic<float> protectOffsetDb { 0.0f }; // overload-protection cut (<= 0)
+    std::atomic<bool> protectionActive { false };
     std::atomic<bool> panelMode { false };
     std::atomic<bool> panelCompact { false };
     std::atomic<bool> measuring { false };
@@ -63,7 +65,8 @@ struct ChannelShared
     bool isAutomationOn() const { return automationOn != nullptr && automationOn->load() > 0.5f; }
     float effectiveTrimDb() const
     {
-        return (trimDb != nullptr ? trimDb->load() : 0.0f) + riderOffsetDb.load();
+        return (trimDb != nullptr ? trimDb->load() : 0.0f) + riderOffsetDb.load()
+               + protectOffsetDb.load();
     }
 };
 

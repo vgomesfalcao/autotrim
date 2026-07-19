@@ -19,6 +19,10 @@ namespace
         ch.trimParam->setValueNotifyingHost(ch.trimParam->convertTo0to1(trimDb));
         ch.trimParam->endChangeGesture();
         ch.riderOffsetDb.store(0.0f);
+        // A fresh measurement recalibrates the trim, so the protective cut
+        // starts over.
+        ch.protectOffsetDb.store(0.0f);
+        ch.protectionActive.store(false);
     }
 } // namespace
 

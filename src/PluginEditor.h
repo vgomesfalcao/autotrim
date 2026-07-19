@@ -42,11 +42,11 @@ public:
     enum State { normal = 0, measuring, noSignal };
 
     void update(float trimTotalDb, float riderOffsetDb, float rideRangeDb, bool riderEnabled,
-                State newState);
+                State newState, float protectDb);
     void paint(juce::Graphics& g) override;
 
 private:
-    float trimTotal = 0.0f, offset = 0.0f, range = 6.0f;
+    float trimTotal = 0.0f, offset = 0.0f, range = 6.0f, protect = 0.0f;
     bool riderOn = false;
     State state = normal;
 };

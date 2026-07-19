@@ -175,12 +175,12 @@ void MeterBar::paint(juce::Graphics& g)
 
 //==============================================================================
 void StatusStrip::update(float trimTotalDb, float riderOffsetDb, float rideRangeDb,
-                         bool riderEnabled, State newState)
+                         bool riderEnabled, State newState, float protectDb)
 {
     const bool changed = std::abs(trimTotalDb - trimTotal) > 0.05f
                          || std::abs(riderOffsetDb - offset) > 0.05f
                          || std::abs(rideRangeDb - range) > 0.05f || riderEnabled != riderOn
-                         || newState != state;
+                         || newState != state || std::abs(protectDb - protect) > 0.05f;
     if (! changed)
         return;
     trimTotal = trimTotalDb;
@@ -188,6 +188,7 @@ void StatusStrip::update(float trimTotalDb, float riderOffsetDb, float rideRange
     range = juce::jmax(0.1f, rideRangeDb);
     riderOn = riderEnabled;
     state = newState;
+    protect = protectDb;
     repaint();
 }
 
@@ -211,6 +212,20 @@ void StatusStrip::paint(juce::Graphics& g)
     g.drawText(formatDb(trimTotal), chipInner, juce::Justification::centredRight);
 
     r.removeFromLeft(14.0f);
+
+    // Overload protection engaged: red badge, impossible to miss.
+    if (protect < -0.05f)
+    {
+        auto badge = r.removeFromRight(118.0f);
+        g.setColour(colours::meterHigh.withAlpha(0.18f));
+        g.fillRoundedRectangle(badge, 8.0f);
+        g.setColour(colours::meterHigh);
+        g.drawRoundedRectangle(badge.reduced(0.5f), 8.0f, 1.0f);
+        g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
+        g.drawText(utf8("PROT ") + formatDb(protect), badge.reduced(8.0f, 0.0f),
+                   juce::Justification::centred);
+        r.removeFromRight(10.0f);
+    }
 
     if (state == measuring)
     {
@@ -480,8 +495,9 @@ void ChannelView::refresh()
     const bool riderEnabled =
         proc.shared->isAutomationOn() && proc.shared->riderOn->load() > 0.5f;
     const auto& profile = dsp::profileFor((int) proc.shared->profile->load());
-    statusStrip.update(trim + riderOffset, riderOffset, profile.rideRangeDb, riderEnabled,
-                       state);
+    const float protect = proc.shared->protectOffsetDb.load();
+    statusStrip.update(trim + riderOffset + protect, riderOffset, profile.rideRangeDb,
+                       riderEnabled, state, protect);
 }
 
 //==============================================================================
@@ -554,6 +570,12 @@ void PanelRow::refresh()
         statusLabel.setText(utf8("medindo…"), juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);
     }
+    else if (shared->protectionActive.load())
+    {
+        statusLabel.setText(utf8("PROT ") + formatDb(shared->protectOffsetDb.load()),
+                            juce::dontSendNotification);
+        statusLabel.setColour(juce::Label::textColourId, colours::meterHigh);
+    }
     else if (shared->noSignal.load())
     {
         statusLabel.setText("sem sinal", juce::dontSendNotification);
@@ -604,6 +626,9 @@ void MiniPanelRow::resized()
 void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    // Red name = overload protection engaged on this channel.
+    nameLabel.setColour(juce::Label::textColourId,
+                        shared->protectionActive.load() ? colours::meterHigh : colours::text);
     outMeter.setLevelLin(shared->peakPostTrim.load());
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;

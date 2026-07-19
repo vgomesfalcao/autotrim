@@ -67,7 +67,17 @@ private:
     float sinceHitS = 1000.0f;
     float sinceCorrectionS = 1000.0f;
 
+    // Overload-protection state (output peaks above target + margin)
+    float protClockS = 0.0f;
+    float protEventTimes[8] = {};
+    int protEventIndex = 0;
+    int protEventCount = 0;
+    bool protOverActive = false;
+    float protOverElapsedS = 0.0f;
+    float protOffenderMaxLin = 0.0f;
+
     void resetHitState();
+    void resetProtectionWindow();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutoTrimProcessor)
 };
