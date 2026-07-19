@@ -68,6 +68,16 @@ public:
         return juce::Font(juce::FontOptions(15.0f, juce::Font::bold));
     }
 
+    juce::Font getComboBoxFont(juce::ComboBox&) override
+    {
+        return juce::Font(juce::FontOptions(15.0f));
+    }
+
+    juce::Font getPopupMenuFont() override
+    {
+        return juce::Font(juce::FontOptions(15.0f));
+    }
+
     // Rotary sliders get a big bold readout — the value must be legible at a
     // glance; linear sliders keep the default compact textbox.
     juce::Label* createSliderTextBox(juce::Slider& slider) override
@@ -75,8 +85,9 @@ public:
         auto* label = LookAndFeel_V4::createSliderTextBox(slider);
         if (slider.getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
         {
-            // The "hero" knob (Ganho) gets an even bigger readout.
-            const float size = slider.getName() == "hero" ? 28.0f : 19.0f;
+            // The "hero" knob (Ganho) gets a display-size readout: it is the
+            // one number this plugin exists to show.
+            const float size = slider.getName() == "hero" ? 36.0f : 20.0f;
             label->setFont(juce::Font(juce::FontOptions(size, juce::Font::bold)));
             label->setColour(juce::Label::textColourId, colours::accent);
             label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);

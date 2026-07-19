@@ -8,7 +8,7 @@ namespace autotrim
 {
 namespace
 {
-    constexpr int kChannelWidth = 440;
+    constexpr int kChannelWidth = 460;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 580;
     constexpr int kRowHeight = 46;
@@ -26,14 +26,14 @@ namespace
     void styleCaption(juce::Label& label, const juce::String& text)
     {
         label.setText(text, juce::dontSendNotification);
-        label.setFont(juce::Font(juce::FontOptions(13.0f)));
+        label.setFont(juce::Font(juce::FontOptions(14.0f)));
         label.setColour(juce::Label::textColourId, colours::subtext);
     }
 
     void styleTitle(juce::Label& label, const juce::String& text)
     {
         label.setText(text, juce::dontSendNotification);
-        label.setFont(juce::Font(juce::FontOptions(22.0f, juce::Font::bold)));
+        label.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
         label.setColour(juce::Label::textColourId, colours::text);
     }
 
@@ -72,7 +72,7 @@ namespace
     void styleSection(juce::Label& label, const juce::String& text)
     {
         label.setText(text.toUpperCase(), juce::dontSendNotification);
-        label.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold))
+        label.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold))
                           .withExtraKerningFactor(0.12f));
         label.setColour(juce::Label::textColourId, colours::subtext);
     }
@@ -168,7 +168,7 @@ void MeterBar::paint(juce::Graphics& g)
     }
 
     g.setColour(colours::text);
-    g.setFont(juce::Font(juce::FontOptions(11.0f)));
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
     const auto text = levelDb <= -90.0f ? juce::String("-inf dB") : formatDb(levelDb);
     g.drawText(text, getLocalBounds().reduced(6, 0), juce::Justification::centredRight);
 }
@@ -202,7 +202,7 @@ void StatusStrip::paint(juce::Graphics& g)
         g.fillRoundedRectangle(badge, 8.0f);
         g.setColour(colours::meterHigh);
         g.drawRoundedRectangle(badge.reduced(0.5f), 8.0f, 1.0f);
-        g.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
+        g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
         g.drawText(utf8("PROT ") + formatDb(protect), badge.reduced(8.0f, 0.0f),
                    juce::Justification::centred);
         r.removeFromRight(10.0f);
@@ -226,9 +226,9 @@ void StatusStrip::paint(juce::Graphics& g)
     // Rider: bipolar center-zero bar within the profile's ride range.
     const float alpha = riderOn ? 1.0f : 0.35f;
     g.setColour(colours::subtext.withMultipliedAlpha(riderOn ? 1.0f : 0.6f));
-    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold))
+    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold))
                   .withExtraKerningFactor(0.12f));
-    g.drawText("RIDER", r.removeFromLeft(46.0f), juce::Justification::centredLeft);
+    g.drawText("RIDER", r.removeFromLeft(52.0f), juce::Justification::centredLeft);
 
     auto valueArea = r.removeFromRight(56.0f);
     auto barArea = r.withSizeKeepingCentre(r.getWidth() - 8.0f, 10.0f);
@@ -254,7 +254,7 @@ void StatusStrip::paint(juce::Graphics& g)
     g.fillRect(cx - 0.75f, barArea.getY() - 2.0f, 1.5f, barArea.getHeight() + 4.0f);
 
     g.setColour(riderOn ? colours::text : colours::subtext);
-    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    g.setFont(juce::Font(juce::FontOptions(13.0f)));
     g.drawText(riderOn ? formatDb(offset) : juce::String("off"), valueArea,
                juce::Justification::centredRight);
 }
@@ -280,13 +280,13 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(sensCaption, "Sensibilidade");
     styleSection(sectionLabel, utf8("Configuração inicial"));
     // Ganho is the day-to-day control: bigger, brighter caption on the knob.
-    trimCaption.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    trimCaption.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
     trimCaption.setColour(juce::Label::textColourId, colours::text);
     trimCaption.setJustificationType(juce::Justification::centred);
 
     meter.setTickVisible(false); // input level needs no moving mark
 
-    nameEditor.setFont(juce::Font(juce::FontOptions(15.0f)));
+    nameEditor.setFont(juce::Font(juce::FontOptions(16.0f)));
     {
         const juce::ScopedLock lock(proc.shared->nameLock);
         nameEditor.setText(proc.shared->name, juce::dontSendNotification);
@@ -324,7 +324,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
 
     trimSlider.setName("hero");
     styleKnob(trimSlider, " dB", 0.0);
-    trimSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 150, 38);
+    trimSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 170, 48);
     styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
@@ -366,71 +366,71 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
 void ChannelView::resized()
 {
     auto r = getLocalBounds().reduced(20);
-    title.setBounds(r.removeFromTop(32));
-    r.removeFromTop(10);
+    title.setBounds(r.removeFromTop(30));
+    r.removeFromTop(12);
 
     // Identity
-    auto nameRow = r.removeFromTop(48);
-    auto presetCol = nameRow.removeFromRight(150);
+    auto nameRow = r.removeFromTop(56);
+    auto presetCol = nameRow.removeFromRight(160);
     nameRow.removeFromRight(12);
-    nameCaption.setBounds(nameRow.removeFromTop(18));
-    nameEditor.setBounds(nameRow.removeFromTop(30));
-    presetCaption.setBounds(presetCol.removeFromTop(18));
-    presetBox.setBounds(presetCol.removeFromTop(30));
-    r.removeFromTop(14);
+    nameCaption.setBounds(nameRow.removeFromTop(20));
+    nameEditor.setBounds(nameRow.removeFromTop(34));
+    presetCaption.setBounds(presetCol.removeFromTop(20));
+    presetBox.setBounds(presetCol.removeFromTop(34));
+    r.removeFromTop(16);
 
     // Input meter first: what is arriving on the channel
-    auto inRow = r.removeFromTop(26);
-    meterCaption.setBounds(inRow.removeFromLeft(64));
-    meter.setBounds(inRow.reduced(0, 2));
-    r.removeFromTop(12);
+    auto inRow = r.removeFromTop(30);
+    meterCaption.setBounds(inRow.removeFromLeft(72));
+    meter.setBounds(inRow.reduced(0, 3));
+    r.removeFromTop(14);
 
     // Set-once configuration card ("Avançado" adds a collapsed row)
-    configCard = r.removeFromTop(advancedOpen ? 252 : 220);
-    auto card = configCard.reduced(14, 12);
-    sectionLabel.setBounds(card.removeFromTop(16));
-    card.removeFromTop(10);
+    configCard = r.removeFromTop(advancedOpen ? 278 : 242);
+    auto card = configCard.reduced(16, 14);
+    sectionLabel.setBounds(card.removeFromTop(18));
+    card.removeFromTop(12);
 
-    auto knobRow = card.removeFromTop(142);
+    auto knobRow = card.removeFromTop(150);
     auto gainCol = knobRow.removeFromLeft(knobRow.getWidth() * 11 / 20);
-    trimCaption.setBounds(gainCol.removeFromTop(22));
+    trimCaption.setBounds(gainCol.removeFromTop(24));
     trimSlider.setBounds(gainCol);
-    auto rightCol = knobRow.withTrimmedLeft(10).withTrimmedBottom(30);
-    profileCaption.setBounds(rightCol.removeFromTop(16));
-    profileBox.setBounds(rightCol.removeFromTop(28));
+    auto rightCol = knobRow.withTrimmedLeft(10);
+    profileCaption.setBounds(rightCol.removeFromTop(18));
+    profileBox.setBounds(rightCol.removeFromTop(32));
     rightCol.removeFromTop(8);
-    automationToggle.setBounds(rightCol.removeFromTop(26));
-    riderToggle.setBounds(rightCol.removeFromTop(26));
-    card.removeFromTop(8);
+    automationToggle.setBounds(rightCol.removeFromTop(28));
+    riderToggle.setBounds(rightCol.removeFromTop(28));
+    card.removeFromTop(12);
 
-    advancedButton.setBounds(card.removeFromTop(20).removeFromLeft(120));
+    advancedButton.setBounds(card.removeFromTop(22).removeFromLeft(130));
     if (advancedOpen)
     {
-        card.removeFromTop(8);
-        auto compactRow = card.removeFromTop(24);
-        targetCaption.setBounds(compactRow.removeFromLeft(52));
-        targetSlider.setBounds(compactRow.removeFromLeft(96));
+        card.removeFromTop(10);
+        auto compactRow = card.removeFromTop(26);
+        targetCaption.setBounds(compactRow.removeFromLeft(56));
+        targetSlider.setBounds(compactRow.removeFromLeft(100));
         compactRow.removeFromLeft(20);
-        sensCaption.setBounds(compactRow.removeFromLeft(92));
-        sensSlider.setBounds(compactRow.removeFromLeft(96));
+        sensCaption.setBounds(compactRow.removeFromLeft(96));
+        sensSlider.setBounds(compactRow.removeFromLeft(100));
     }
-    r.removeFromTop(12);
+    r.removeFromTop(14);
 
     // Output meter last: the corrected result, next to its status strip
-    auto outRow = r.removeFromTop(26);
-    outMeterCaption.setBounds(outRow.removeFromLeft(64));
-    outMeter.setBounds(outRow.reduced(0, 2));
-    r.removeFromTop(8);
-    statusStrip.setBounds(r.removeFromTop(36));
+    auto outRow = r.removeFromTop(30);
+    outMeterCaption.setBounds(outRow.removeFromLeft(72));
+    outMeter.setBounds(outRow.reduced(0, 3));
+    r.removeFromTop(10);
+    statusStrip.setBounds(r.removeFromTop(40));
 
-    panelToggle.setBounds(r.removeFromBottom(28));
+    panelToggle.setBounds(r.removeFromBottom(30));
 }
 
 int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 304 + (advancedOpen ? 252 : 220);
+    return 336 + (advancedOpen ? 278 : 242);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -489,7 +489,7 @@ void ChannelView::refresh()
 PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
 {
     meter.setTickVisible(false); // input level needs no moving mark
-    nameLabel.setFont(juce::Font(juce::FontOptions(15.0f)));
+    nameLabel.setFont(juce::Font(juce::FontOptions(16.0f)));
     trimLabel.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
     trimLabel.setColour(juce::Label::textColourId, colours::accent);
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
@@ -595,7 +595,7 @@ namespace
 
 MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
 {
-    nameLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    nameLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     nameLabel.setColour(juce::Label::textColourId, colours::text);
     addAndMakeVisible(nameLabel);
     addAndMakeVisible(outMeter);
