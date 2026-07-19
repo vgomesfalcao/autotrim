@@ -9,7 +9,7 @@ namespace autotrim
 namespace
 {
     constexpr int kChannelWidth = 440;
-    constexpr int kChannelHeight = 566;
+    constexpr int kChannelHeight = 484;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 580;
     constexpr int kRowHeight = 46;
@@ -55,6 +55,27 @@ namespace
         slider.setMouseDragSensitivity(400);
         slider.setDoubleClickReturnValue(true, defaultValue);
         slider.setTextValueSuffix(suffix);
+    }
+
+    // Compact draggable value bar for set-once parameters: quiet by design,
+    // still draggable/typeable when needed.
+    void styleCompactBar(juce::Slider& slider, const juce::String& suffix, double defaultValue)
+    {
+        slider.setSliderStyle(juce::Slider::LinearBar);
+        slider.setMouseDragSensitivity(300);
+        slider.setDoubleClickReturnValue(true, defaultValue);
+        slider.setTextValueSuffix(suffix);
+        slider.setColour(juce::Slider::trackColourId, colours::accent.withAlpha(0.25f));
+        slider.setColour(juce::Slider::textBoxTextColourId, colours::text);
+    }
+
+    // Small uppercase section header with letter spacing.
+    void styleSection(juce::Label& label, const juce::String& text)
+    {
+        label.setText(text.toUpperCase(), juce::dontSendNotification);
+        label.setFont(juce::Font(juce::FontOptions(11.5f, juce::Font::bold))
+                          .withExtraKerningFactor(0.12f));
+        label.setColour(juce::Label::textColourId, colours::subtext);
     }
 
     void writeBoolParam(juce::RangedAudioParameter* param, bool value)
@@ -139,10 +160,13 @@ void MeterBar::paint(juce::Graphics& g)
     }
 
     // Target mark
-    const float tickFrac = juce::jlimit(0.01f, 0.99f, mapDbToFrac(tickDb));
-    const float tickX = r.getX() + r.getWidth() * tickFrac;
-    g.setColour(colours::text.withAlpha(0.85f));
-    g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
+    if (tickVisible)
+    {
+        const float tickFrac = juce::jlimit(0.01f, 0.99f, mapDbToFrac(tickDb));
+        const float tickX = r.getX() + r.getWidth() * tickFrac;
+        g.setColour(colours::text.withAlpha(0.85f));
+        g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
+    }
 
     g.setColour(colours::text);
     g.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -164,13 +188,15 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(presetCaption, "Preset");
     styleCaption(profileCaption, "Perfil do rider");
     styleCaption(sensCaption, "Sensibilidade");
-    styleCaption(meterCaption, utf8("Entrada (pré-trim)"));
-    styleCaption(outMeterCaption, utf8("Saída (pós-trim)"));
+    styleCaption(meterCaption, "Entrada");
+    styleCaption(outMeterCaption, utf8("Saída"));
     styleCaption(targetCaption, "Target de pico");
-    styleCaption(trimCaption, "Trim aplicado");
+    styleCaption(trimCaption, "Trim");
+    styleCaption(sensCaption, "Sensibilidade");
+    styleSection(sectionLabel, utf8("Configuração inicial"));
     targetCaption.setJustificationType(juce::Justification::centred);
-    trimCaption.setJustificationType(juce::Justification::centred);
-    sensCaption.setJustificationType(juce::Justification::centred);
+
+    meter.setTickVisible(false); // input level needs no moving mark
 
     nameEditor.setFont(juce::Font(juce::FontOptions(15.0f)));
     {
@@ -213,8 +239,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     };
 
     styleKnob(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
-    styleKnob(trimSlider, " dB", 0.0);
-    styleKnob(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
+    styleCompactBar(trimSlider, " dB", 0.0);
+    styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     statusLabel.setJustificationType(juce::Justification::centred);
@@ -228,7 +254,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
-             &outMeterCaption, &targetCaption, &trimCaption, &statusLabel,
+             &outMeterCaption, &targetCaption, &trimCaption, &statusLabel, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle })
         addAndMakeVisible(c);
 }
@@ -239,6 +265,7 @@ void ChannelView::resized()
     title.setBounds(r.removeFromTop(32));
     r.removeFromTop(10);
 
+    // Identity
     auto nameRow = r.removeFromTop(48);
     auto presetCol = nameRow.removeFromRight(150);
     nameRow.removeFromRight(12);
@@ -246,46 +273,55 @@ void ChannelView::resized()
     nameEditor.setBounds(nameRow.removeFromTop(30));
     presetCaption.setBounds(presetCol.removeFromTop(18));
     presetBox.setBounds(presetCol.removeFromTop(30));
-    r.removeFromTop(10);
-
-    meterCaption.setBounds(r.removeFromTop(18));
-    meter.setBounds(r.removeFromTop(22));
-    r.removeFromTop(8);
-    outMeterCaption.setBounds(r.removeFromTop(18));
-    outMeter.setBounds(r.removeFromTop(22));
     r.removeFromTop(14);
 
-    auto knobRow = r.removeFromTop(132);
-    const int knobWidth = knobRow.getWidth() / 3;
-    auto targetCol = knobRow.removeFromLeft(knobWidth);
-    auto trimCol = knobRow.removeFromLeft(knobWidth);
-    auto sensCol = knobRow;
-    targetCaption.setBounds(targetCol.removeFromTop(18));
-    targetSlider.setBounds(targetCol);
-    trimCaption.setBounds(trimCol.removeFromTop(18));
-    trimSlider.setBounds(trimCol);
-    sensCaption.setBounds(sensCol.removeFromTop(18));
-    sensSlider.setBounds(sensCol);
+    // Day-to-day: the two meters, labels inline on the left
+    auto inRow = r.removeFromTop(26);
+    meterCaption.setBounds(inRow.removeFromLeft(64));
+    meter.setBounds(inRow.reduced(0, 2));
+    r.removeFromTop(6);
+    auto outRow = r.removeFromTop(26);
+    outMeterCaption.setBounds(outRow.removeFromLeft(64));
+    outMeter.setBounds(outRow.reduced(0, 2));
     r.removeFromTop(4);
     statusLabel.setBounds(r.removeFromTop(20));
-    r.removeFromTop(10);
+    r.removeFromTop(12);
 
-    automationToggle.setBounds(r.removeFromTop(28));
-    riderToggle.setBounds(r.removeFromTop(28));
-    r.removeFromTop(8);
+    // Set-once configuration card
+    configCard = r.removeFromTop(206);
+    auto card = configCard.reduced(14, 12);
+    sectionLabel.setBounds(card.removeFromTop(16));
+    card.removeFromTop(10);
 
-    auto profileRow = r.removeFromTop(48).withTrimmedRight(getWidth() / 2 - 20);
-    profileCaption.setBounds(profileRow.removeFromTop(18));
-    profileBox.setBounds(profileRow.removeFromTop(30));
+    auto knobRow = card.removeFromTop(112);
+    auto targetCol = knobRow.removeFromLeft(knobRow.getWidth() / 2);
+    targetCaption.setBounds(targetCol.removeFromTop(16));
+    targetSlider.setBounds(targetCol);
+    auto rightCol = knobRow.withTrimmedLeft(10);
+    profileCaption.setBounds(rightCol.removeFromTop(16));
+    profileBox.setBounds(rightCol.removeFromTop(28));
+    rightCol.removeFromTop(8);
+    automationToggle.setBounds(rightCol.removeFromTop(26));
+    riderToggle.setBounds(rightCol.removeFromTop(26));
+    card.removeFromTop(10);
+
+    auto compactRow = card.removeFromTop(24);
+    trimCaption.setBounds(compactRow.removeFromLeft(36));
+    trimSlider.setBounds(compactRow.removeFromLeft(96));
+    compactRow.removeFromLeft(20);
+    sensCaption.setBounds(compactRow.removeFromLeft(92));
+    sensSlider.setBounds(compactRow.removeFromLeft(96));
 
     panelToggle.setBounds(r.removeFromBottom(28));
 }
 
 void ChannelView::paint(juce::Graphics& g)
 {
-    auto divider = panelToggle.getBounds().translated(0, -8);
+    // Card behind the set-once configuration section.
+    g.setColour(colours::card);
+    g.fillRoundedRectangle(configCard.toFloat(), 10.0f);
     g.setColour(colours::cardOutline);
-    g.fillRect(divider.getX(), divider.getY(), divider.getWidth(), 1);
+    g.drawRoundedRectangle(configCard.toFloat().reduced(0.5f), 10.0f, 1.0f);
 }
 
 void ChannelView::refresh()
@@ -347,6 +383,7 @@ void ChannelView::refresh()
 //==============================================================================
 PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
 {
+    meter.setTickVisible(false); // input level needs no moving mark
     nameLabel.setFont(juce::Font(juce::FontOptions(15.0f)));
     trimLabel.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
     trimLabel.setColour(juce::Label::textColourId, colours::accent);

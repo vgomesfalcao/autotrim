@@ -21,6 +21,7 @@ public:
     // Where to draw the mark (may differ from the anchor, e.g. the input
     // meter marks target − trim on a target-anchored scale).
     void setTickDb(float newTickDb);
+    void setTickVisible(bool shouldShow) { tickVisible = shouldShow; }
     void paint(juce::Graphics& g) override;
 
 private:
@@ -29,6 +30,7 @@ private:
     float levelDb = -200.0f;
     float anchorDb = -18.0f;
     float tickDb = -18.0f;
+    bool tickVisible = true;
 };
 
 // Per-channel view: name, meter, target, trim readout and toggles.
@@ -43,15 +45,16 @@ public:
 private:
     AutoTrimProcessor& proc;
     juce::String lastPlaceholder;
+    juce::Rectangle<int> configCard;
 
-    juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption;
+    juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption, sectionLabel;
     juce::TextEditor nameEditor;
     juce::ComboBox presetBox, profileBox;
     MeterBar meter, outMeter;
     juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption, statusLabel;
     juce::Slider targetSlider, trimSlider, sensSlider;
-    juce::ToggleButton automationToggle { utf8("Automação ligada (aplica o trim)") },
-        riderToggle { utf8("Modo contínuo (rider): segue o target ao vivo") },
+    juce::ToggleButton automationToggle { utf8("Automação") },
+        riderToggle { utf8("Rider (modo contínuo)") },
         panelToggle { utf8("Usar esta instância como painel de controle") };
 
     juce::AudioProcessorValueTreeState::SliderAttachment targetAttachment, trimAttachment,

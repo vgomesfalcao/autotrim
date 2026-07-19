@@ -38,6 +38,8 @@ public:
         setColour(juce::Slider::backgroundColourId, colours::cardOutline);
         setColour(juce::Slider::textBoxTextColourId, colours::text);
         setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        setColour(juce::Slider::textBoxHighlightColourId, colours::accent.withAlpha(0.3f));
         setColour(juce::Label::textColourId, colours::text);
         setColour(juce::ToggleButton::textColourId, colours::text);
         setColour(juce::ToggleButton::tickColourId, colours::accent);
