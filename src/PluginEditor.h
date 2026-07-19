@@ -33,6 +33,12 @@ private:
     float tickDb = -10.0f;
     bool tickVisible = true;
     juce::String unit { " dB" };
+    // Console-style readability: peak-hold marker (compare against the target
+    // calmly) and a slow-refresh numeric readout.
+    float holdDb = -200.0f;
+    double holdSetMs = 0.0;
+    float textDb = -200.0f;
+    double textSetMs = 0.0;
 };
 
 // Designed status strip: TRIM chip with the total applied gain, plus a

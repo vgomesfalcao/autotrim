@@ -124,11 +124,35 @@ namespace
 void MeterBar::setLevelLin(float newLevelLin)
 {
     const float newDb = dsp::gainToDb(newLevelLin);
-    if (std::abs(newDb - levelDb) > 0.05f)
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    bool dirty = std::abs(newDb - levelDb) > 0.05f;
+    levelDb = newDb;
+
+    // Peak hold: grabs new maxima instantly, holds 2 s, then falls ~30 dB/s.
+    if (newDb >= holdDb)
     {
-        levelDb = newDb;
-        repaint();
+        if (std::abs(newDb - holdDb) > 0.05f)
+            dirty = true;
+        holdDb = newDb;
+        holdSetMs = now;
     }
+    else if (now - holdSetMs > 2000.0)
+    {
+        holdDb = juce::jmax(newDb, holdDb - 1.0f);
+        dirty = true;
+    }
+
+    // Numeric readout refreshes twice a second so it can actually be read.
+    if (now - textSetMs > 500.0)
+    {
+        if (std::abs(textDb - levelDb) > 0.05f)
+            dirty = true;
+        textDb = levelDb;
+        textSetMs = now;
+    }
+
+    if (dirty)
+        repaint();
 }
 
 void MeterBar::setScaleAnchorDb(float newAnchorDb)
@@ -182,6 +206,18 @@ void MeterBar::paint(juce::Graphics& g)
         g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
     }
 
+    // Peak-hold marker: the calm reference to compare against the target.
+    if (holdDb > -90.0f)
+    {
+        const float holdFrac = juce::jlimit(0.0f, 1.0f, mapDbToFrac(holdDb));
+        if (holdFrac > 0.01f)
+        {
+            const float holdX = r.getX() + r.getWidth() * holdFrac;
+            g.setColour(holdDb > tickDb + 0.5f ? colours::meterHigh : colours::accent);
+            g.fillRect(holdX - 1.5f, r.getY() + 1.0f, 3.0f, r.getHeight() - 2.0f);
+        }
+    }
+
     // Target mark
     if (tickVisible)
     {
@@ -193,9 +229,9 @@ void MeterBar::paint(juce::Graphics& g)
 
     g.setColour(colours::text);
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
-    const auto text = levelDb <= -90.0f
+    const auto text = textDb <= -90.0f
                           ? "-inf" + unit
-                          : (levelDb >= 0.0f ? "+" : "") + juce::String(levelDb, 1) + unit;
+                          : (textDb >= 0.0f ? "+" : "") + juce::String(textDb, 1) + unit;
     g.drawText(text, getLocalBounds().reduced(6, 0), juce::Justification::centredRight);
 }
 
