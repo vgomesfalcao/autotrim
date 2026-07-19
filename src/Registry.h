@@ -40,6 +40,10 @@ struct ChannelShared
     std::atomic<bool> panelMode { false };
     std::atomic<bool> panelCompact { false };
     std::atomic<bool> measuring { false };
+    // Armed measurement handshake: audio thread flips measStarted when signal
+    // arrives and measDone when the window completes.
+    std::atomic<bool> measStarted { false };
+    std::atomic<bool> measDone { false };
     std::atomic<bool> noSignal { false };
     std::atomic<bool> alive { true };
     // Bumped when a new measurement starts so the audio thread resets its

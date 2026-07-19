@@ -8,20 +8,18 @@ namespace autotrim::measurement
 namespace
 {
     bool running = false;
-    double startMs = 0.0;
-    double durationMs = 0.0;
-    // Non-null while measuring a single channel instead of all of them.
-    std::shared_ptr<ChannelShared> soloChannel;
+    double armDeadlineMs = 0.0;
+    std::vector<std::shared_ptr<ChannelShared>> involved;
 
     void arm(ChannelShared& ch)
     {
         ch.measEpoch.fetch_add(1);
         ch.measuredPeak.store(0.0f);
         ch.noSignal.store(false);
+        ch.measStarted.store(false);
+        ch.measDone.store(false);
         ch.measuring.store(true);
     }
-
-    void finishChannel(ChannelShared& ch, float maxTrim);
 
     void applyTrim(ChannelShared& ch, float trimDb)
     {
@@ -40,8 +38,6 @@ namespace
     // No-signal channels are flagged and left completely untouched.
     void finishChannel(ChannelShared& ch, float maxTrim)
     {
-        if (! ch.measuring.exchange(false))
-            return;
         const float peakDb = dsp::gainToDb(ch.measuredPeak.load());
         const float targetDb =
             ch.targetDb != nullptr ? ch.targetDb->load() : dsp::kDefaultTargetDb;
@@ -50,33 +46,38 @@ namespace
         else
             ch.noSignal.store(true);
     }
+
+    void begin()
+    {
+        running = true;
+        armDeadlineMs =
+            juce::Time::getMillisecondCounterHiRes() + dsp::kMeasArmTimeoutS * 1000.0;
+    }
 } // namespace
 
-void start(float durationS)
+void start(float)
 {
     if (running)
         return;
+    involved.clear();
     for (auto& ch : registry::channels())
     {
         if (! ch->isAutomationOn())
             continue;
         arm(*ch);
+        involved.push_back(ch);
     }
-    soloChannel = nullptr;
-    running = true;
-    startMs = juce::Time::getMillisecondCounterHiRes();
-    durationMs = juce::jmax(0.5f, durationS) * 1000.0;
+    begin();
 }
 
-void startChannel(const std::shared_ptr<ChannelShared>& channel, float durationS)
+void startChannel(const std::shared_ptr<ChannelShared>& channel, float)
 {
     if (running || channel == nullptr)
         return;
+    involved.clear();
     arm(*channel);
-    soloChannel = channel;
-    running = true;
-    startMs = juce::Time::getMillisecondCounterHiRes();
-    durationMs = juce::jmax(0.5f, durationS) * 1000.0;
+    involved.push_back(channel);
+    begin();
 }
 
 void cancel()
@@ -84,38 +85,62 @@ void cancel()
     if (! running)
         return;
     running = false;
-    if (soloChannel != nullptr)
-        soloChannel->measuring.store(false);
-    else
-        for (auto& ch : registry::channels())
-            ch->measuring.store(false);
-    soloChannel = nullptr;
+    for (auto& ch : involved)
+    {
+        ch->measuring.store(false);
+        ch->measDone.store(false);
+    }
+    involved.clear();
 }
 
 void poll()
 {
-    if (! running || juce::Time::getMillisecondCounterHiRes() - startMs < durationMs)
+    if (! running)
         return;
-    running = false;
 
     const float maxTrim = registry::maxTrimDb.load();
-    if (soloChannel != nullptr)
+    const bool timedOut = juce::Time::getMillisecondCounterHiRes() > armDeadlineMs;
+    bool anyPending = false;
+
+    for (auto& ch : involved)
     {
-        finishChannel(*soloChannel, maxTrim);
-        soloChannel = nullptr;
-        return;
+        if (ch->measDone.exchange(false))
+        {
+            finishChannel(*ch, maxTrim);
+        }
+        else if (ch->measuring.load())
+        {
+            if (timedOut)
+            {
+                // Whatever was captured decides: never-started channels have
+                // peak 0 -> "sem sinal", untouched.
+                ch->measuring.store(false);
+                finishChannel(*ch, maxTrim);
+            }
+            else
+            {
+                anyPending = true;
+            }
+        }
     }
-    for (auto& ch : registry::channels())
-        finishChannel(*ch, maxTrim);
+
+    if (! anyPending)
+    {
+        running = false;
+        involved.clear();
+    }
 }
 
 bool isRunning() { return running; }
 
 float progress()
 {
-    if (! running)
-        return -1.0f;
-    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - startMs;
-    return juce::jlimit(0.0, 1.0, elapsed / durationMs);
+    if (! running || involved.empty())
+        return running ? 0.0f : -1.0f;
+    int finished = 0;
+    for (auto& ch : involved)
+        if (! ch->measuring.load())
+            ++finished;
+    return (float) finished / (float) involved.size();
 }
 } // namespace autotrim::measurement

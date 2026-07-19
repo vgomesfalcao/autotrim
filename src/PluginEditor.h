@@ -39,7 +39,7 @@ private:
 class StatusStrip : public juce::Component
 {
 public:
-    enum State { normal = 0, measuring, noSignal };
+    enum State { normal = 0, armed, measuring, noSignal };
 
     void update(float riderOffsetDb, float rideRangeDb, bool riderEnabled, State newState,
                 float protectDb);

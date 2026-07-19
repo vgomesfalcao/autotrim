@@ -192,12 +192,16 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         juce::jmax(shared->peakPostTrim.load() * meterDecay, blockPeakPost));
 
     // Measurement window: this thread is the only writer of measuredPeak; the
-    // epoch bump tells us the panel started a new run.
+    // epoch bump tells us the panel started a new run. Armed: the window only
+    // starts counting when signal first crosses the gate, so sources that
+    // play at isolated moments (toms) still get a full-window capture.
     const uint32_t epoch = shared->measEpoch.load();
     if (epoch != measEpoch)
     {
         measEpoch = epoch;
         measPeak = 0.0f;
+        measStartedLocal = false;
+        measSamplesLeft = 0;
     }
     // Overload protection: if the *output* peaks past target + margin too
     // many times inside the window, cut the trim to protect the downstream
@@ -287,8 +291,24 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
-        measPeak = juce::jmax(measPeak, blockPeak);
-        shared->measuredPeak.store(measPeak);
+        if (! measStartedLocal && blockPeak > dsp::dbToGain(dsp::kGateDb))
+        {
+            measStartedLocal = true;
+            shared->measStarted.store(true);
+            measSamplesLeft =
+                (int) (registry::measDurationS.load() * (float) currentSampleRate);
+        }
+        if (measStartedLocal)
+        {
+            measPeak = juce::jmax(measPeak, blockPeak);
+            shared->measuredPeak.store(measPeak);
+            measSamplesLeft -= numSamples;
+            if (measSamplesLeft <= 0)
+            {
+                shared->measuring.store(false);
+                shared->measDone.store(true);
+            }
+        }
     }
     else if (riderOn)
     {

@@ -232,11 +232,12 @@ void StatusStrip::paint(juce::Graphics& g)
         r.removeFromRight(10.0f);
     }
 
-    if (state == measuring)
+    if (state == armed || state == measuring)
     {
         g.setColour(colours::info);
         g.setFont(juce::Font(juce::FontOptions(13.0f)));
-        g.drawText(utf8("medindo…"), r, juce::Justification::centredLeft);
+        g.drawText(state == armed ? utf8("aguardando sinal…") : utf8("medindo…"), r,
+                   juce::Justification::centredLeft);
         return;
     }
     if (state == noSignal)
@@ -519,7 +520,9 @@ void ChannelView::refresh()
     outMeter.setScaleAnchorDb(target);
     outMeter.setTickDb(target);
 
-    const auto state = proc.shared->measuring.load() ? StatusStrip::measuring
+    const auto state = proc.shared->measuring.load()
+                           ? (proc.shared->measStarted.load() ? StatusStrip::measuring
+                                                              : StatusStrip::armed)
                        : proc.shared->noSignal.load() ? StatusStrip::noSignal
                                                       : StatusStrip::normal;
     const bool riderEnabled =
@@ -601,7 +604,9 @@ void PanelRow::refresh()
 
     if (shared->measuring.load())
     {
-        statusLabel.setText(utf8("medindo…"), juce::dontSendNotification);
+        statusLabel.setText(shared->measStarted.load() ? utf8("medindo…")
+                                                       : utf8("aguardando sinal…"),
+                            juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);
     }
     else if (shared->protectionActive.load())
@@ -686,6 +691,7 @@ MiniPanelView::MiniPanelView(AutoTrimProcessor& processor) : proc(processor)
 
     viewport.setViewedComponent(&rowContainer, false);
     viewport.setScrollBarsShown(true, false);
+    progressBar.setTextToDisplay(utf8("medindo…"));
 
     for (auto* c : std::initializer_list<juce::Component*> {
              &measureButton, &expandButton, &progressBar, &viewport })
@@ -788,6 +794,8 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     compactButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
     compactButton.setColour(juce::TextButton::textColourOffId, colours::text);
     compactButton.onClick = [this] { proc.shared->panelCompact.store(true); };
+
+    progressBar.setTextToDisplay(utf8("medindo… (canais prontos)"));
 
     panelToggle.setToggleState(true, juce::dontSendNotification);
     panelToggle.onClick = [this]

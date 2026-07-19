@@ -49,9 +49,12 @@ private:
     int holdSlotIndex = 0;
     float holdSlotElapsed = 0.0f;
     // Local measurement accumulator; reset when measEpoch changes so the
-    // panel's reset can never race the audio thread.
+    // panel's reset can never race the audio thread. The window is armed:
+    // counting starts only when signal first crosses the gate.
     float measPeak = 0.0f;
     uint32_t measEpoch = 0;
+    bool measStartedLocal = false;
+    int measSamplesLeft = 0;
     double currentSampleRate = 48000.0;
 
     // Hit detection state (drum profile)

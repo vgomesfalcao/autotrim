@@ -74,6 +74,11 @@ constexpr float kProtectRearmS = 0.3f;
 constexpr float kProtectHoldS = 5.0f;
 constexpr float kProtectReleaseDbPerS = 0.5f;
 
+// Armed measurement: the window only starts counting when the channel first
+// sees signal above the gate (isolated sources like toms play at arbitrary
+// moments). Channels that never receive signal time out untouched.
+constexpr float kMeasArmTimeoutS = 60.0f;
+
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
 constexpr float kHitRetriggerS = 0.100f; // minimum spacing between hits
