@@ -382,16 +382,10 @@ void ChannelView::resized()
     presetBox.setBounds(presetCol.removeFromTop(30));
     r.removeFromTop(14);
 
-    // Day-to-day: the two meters, labels inline on the left
+    // Input meter first: what is arriving on the channel
     auto inRow = r.removeFromTop(26);
     meterCaption.setBounds(inRow.removeFromLeft(64));
     meter.setBounds(inRow.reduced(0, 2));
-    r.removeFromTop(6);
-    auto outRow = r.removeFromTop(26);
-    outMeterCaption.setBounds(outRow.removeFromLeft(64));
-    outMeter.setBounds(outRow.reduced(0, 2));
-    r.removeFromTop(8);
-    statusStrip.setBounds(r.removeFromTop(36));
     r.removeFromTop(12);
 
     // Set-once configuration card ("Avançado" adds a collapsed row)
@@ -423,6 +417,14 @@ void ChannelView::resized()
         sensCaption.setBounds(compactRow.removeFromLeft(92));
         sensSlider.setBounds(compactRow.removeFromLeft(96));
     }
+    r.removeFromTop(12);
+
+    // Output meter last: the corrected result, next to its status strip
+    auto outRow = r.removeFromTop(26);
+    outMeterCaption.setBounds(outRow.removeFromLeft(64));
+    outMeter.setBounds(outRow.reduced(0, 2));
+    r.removeFromTop(8);
+    statusStrip.setBounds(r.removeFromTop(36));
 
     panelToggle.setBounds(r.removeFromBottom(28));
 }
@@ -431,7 +433,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 298 + (advancedOpen ? 222 : 190);
+    return 304 + (advancedOpen ? 222 : 190);
 }
 
 void ChannelView::paint(juce::Graphics& g)
