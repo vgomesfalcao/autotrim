@@ -9,7 +9,7 @@ namespace autotrim
 namespace
 {
     constexpr int kChannelWidth = 440;
-    constexpr int kChannelHeight = 640;
+    constexpr int kChannelHeight = 566;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 580;
     constexpr int kRowHeight = 46;
@@ -44,6 +44,19 @@ namespace
         slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 20);
     }
 
+    // Rotary knob following the conventions users already know from FabFilter
+    // and friends: calm drag (400 px for the full range), Cmd/Ctrl-drag for
+    // fine adjustment (JUCE velocity mode), double-click resets to default,
+    // big value readout underneath.
+    void styleKnob(juce::Slider& slider, const juce::String& suffix, double defaultValue)
+    {
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 104, 26);
+        slider.setMouseDragSensitivity(400);
+        slider.setDoubleClickReturnValue(true, defaultValue);
+        slider.setTextValueSuffix(suffix);
+    }
+
     void writeBoolParam(juce::RangedAudioParameter* param, bool value)
     {
         if (param == nullptr)
@@ -74,18 +87,27 @@ void MeterBar::setLevelLin(float newLevelLin)
     }
 }
 
-void MeterBar::setTargetDb(float newTargetDb)
+void MeterBar::setScaleAnchorDb(float newAnchorDb)
 {
-    if (std::abs(newTargetDb - targetDb) > 0.05f)
+    if (std::abs(newAnchorDb - anchorDb) > 0.05f)
     {
-        targetDb = newTargetDb;
+        anchorDb = newAnchorDb;
+        repaint();
+    }
+}
+
+void MeterBar::setTickDb(float newTickDb)
+{
+    if (std::abs(newTickDb - tickDb) > 0.05f)
+    {
+        tickDb = newTickDb;
         repaint();
     }
 }
 
 float MeterBar::mapDbToFrac(float db) const
 {
-    const float t = juce::jlimit(kMeterFloorDb + 4.0f, -1.0f, targetDb);
+    const float t = juce::jlimit(kMeterFloorDb + 4.0f, -1.0f, anchorDb);
     const float knee = juce::jmax(t - kMeterKneeDb, kMeterFloorDb + 2.0f);
     if (db <= kMeterFloorDb)
         return 0.0f;
@@ -117,7 +139,8 @@ void MeterBar::paint(juce::Graphics& g)
     }
 
     // Target mark
-    const float tickX = r.getX() + r.getWidth() * kMeterTargetFrac;
+    const float tickFrac = juce::jlimit(0.01f, 0.99f, mapDbToFrac(tickDb));
+    const float tickX = r.getX() + r.getWidth() * tickFrac;
     g.setColour(colours::text.withAlpha(0.85f));
     g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
 
@@ -145,6 +168,9 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(outMeterCaption, utf8("Saída (pós-trim)"));
     styleCaption(targetCaption, "Target de pico");
     styleCaption(trimCaption, "Trim aplicado");
+    targetCaption.setJustificationType(juce::Justification::centred);
+    trimCaption.setJustificationType(juce::Justification::centred);
+    sensCaption.setJustificationType(juce::Justification::centred);
 
     nameEditor.setFont(juce::Font(juce::FontOptions(15.0f)));
     {
@@ -186,20 +212,12 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                                 dsp::profileFor(index).sensitivityDb);
     };
 
-    styleHSlider(sensSlider);
-    sensSlider.setTextValueSuffix(" dBFS");
-
-    styleHSlider(targetSlider);
-    targetSlider.setTextValueSuffix(" dBFS");
-    styleHSlider(trimSlider);
-    trimSlider.setTextValueSuffix(" dB");
-
-    trimValue.setFont(juce::Font(juce::FontOptions(30.0f, juce::Font::bold)));
-    trimValue.setColour(juce::Label::textColourId, colours::accent);
-    trimValue.setJustificationType(juce::Justification::centredLeft);
+    styleKnob(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
+    styleKnob(trimSlider, " dB", 0.0);
+    styleKnob(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
-    statusLabel.setJustificationType(juce::Justification::centredLeft);
+    statusLabel.setJustificationType(juce::Justification::centred);
 
     panelToggle.onClick = [this]
     {
@@ -210,7 +228,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
-             &outMeterCaption, &targetCaption, &trimCaption, &trimValue, &statusLabel,
+             &outMeterCaption, &targetCaption, &trimCaption, &statusLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle })
         addAndMakeVisible(c);
 }
@@ -230,14 +248,6 @@ void ChannelView::resized()
     presetBox.setBounds(presetCol.removeFromTop(30));
     r.removeFromTop(10);
 
-    auto profileRow = r.removeFromTop(48);
-    auto sensCol = profileRow.removeFromRight(profileRow.getWidth() / 2).withTrimmedLeft(12);
-    profileCaption.setBounds(profileRow.removeFromTop(18));
-    profileBox.setBounds(profileRow.removeFromTop(30));
-    sensCaption.setBounds(sensCol.removeFromTop(18));
-    sensSlider.setBounds(sensCol.removeFromTop(30));
-    r.removeFromTop(14);
-
     meterCaption.setBounds(r.removeFromTop(18));
     meter.setBounds(r.removeFromTop(22));
     r.removeFromTop(8);
@@ -245,19 +255,28 @@ void ChannelView::resized()
     outMeter.setBounds(r.removeFromTop(22));
     r.removeFromTop(14);
 
-    targetCaption.setBounds(r.removeFromTop(18));
-    targetSlider.setBounds(r.removeFromTop(32));
-    r.removeFromTop(14);
-
-    trimCaption.setBounds(r.removeFromTop(18));
-    auto trimRow = r.removeFromTop(40);
-    trimValue.setBounds(trimRow.removeFromLeft(140));
-    trimSlider.setBounds(trimRow);
-    statusLabel.setBounds(r.removeFromTop(22));
-    r.removeFromTop(8);
+    auto knobRow = r.removeFromTop(132);
+    const int knobWidth = knobRow.getWidth() / 3;
+    auto targetCol = knobRow.removeFromLeft(knobWidth);
+    auto trimCol = knobRow.removeFromLeft(knobWidth);
+    auto sensCol = knobRow;
+    targetCaption.setBounds(targetCol.removeFromTop(18));
+    targetSlider.setBounds(targetCol);
+    trimCaption.setBounds(trimCol.removeFromTop(18));
+    trimSlider.setBounds(trimCol);
+    sensCaption.setBounds(sensCol.removeFromTop(18));
+    sensSlider.setBounds(sensCol);
+    r.removeFromTop(4);
+    statusLabel.setBounds(r.removeFromTop(20));
+    r.removeFromTop(10);
 
     automationToggle.setBounds(r.removeFromTop(28));
     riderToggle.setBounds(r.removeFromTop(28));
+    r.removeFromTop(8);
+
+    auto profileRow = r.removeFromTop(48).withTrimmedRight(getWidth() / 2 - 20);
+    profileCaption.setBounds(profileRow.removeFromTop(18));
+    profileBox.setBounds(profileRow.removeFromTop(30));
 
     panelToggle.setBounds(r.removeFromBottom(28));
 }
@@ -293,11 +312,14 @@ void ChannelView::refresh()
         nameEditor.repaint();
     }
 
+    // Both meters use a stable target-anchored scale; on the input meter only
+    // the mark moves (to target − trim, where the input should sit).
     meter.setLevelLin(proc.shared->peakPreTrim.load());
-    meter.setTargetDb(target - (trim + riderOffset)); // where the input should sit
+    meter.setScaleAnchorDb(target);
+    meter.setTickDb(target - (trim + riderOffset));
     outMeter.setLevelLin(proc.shared->peakPostTrim.load());
-    outMeter.setTargetDb(target);
-    trimValue.setText(formatDb(trim), juce::dontSendNotification);
+    outMeter.setScaleAnchorDb(target);
+    outMeter.setTickDb(target);
 
     if (proc.shared->measuring.load())
     {
@@ -375,9 +397,11 @@ void PanelRow::refresh()
     const float trim = shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f;
     const float target = shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f;
     meter.setLevelLin(shared->peakPreTrim.load());
-    meter.setTargetDb(target - (trim + shared->riderOffsetDb.load()));
+    meter.setScaleAnchorDb(target);
+    meter.setTickDb(target - (trim + shared->riderOffsetDb.load()));
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    outMeter.setTargetDb(target);
+    outMeter.setScaleAnchorDb(target);
+    outMeter.setTickDb(target);
     trimLabel.setText(formatDb(trim), juce::dontSendNotification);
 
     const bool automationOn = shared->isAutomationOn();
@@ -439,7 +463,9 @@ void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    outMeter.setTargetDb(shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f);
+    const float target = shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f;
+    outMeter.setScaleAnchorDb(target);
+    outMeter.setTickDb(target);
 }
 
 MiniPanelView::MiniPanelView(AutoTrimProcessor& processor) : proc(processor)

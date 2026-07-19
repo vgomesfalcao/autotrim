@@ -32,6 +32,8 @@ public:
         setColourScheme(scheme);
 
         setColour(juce::Slider::thumbColourId, colours::accent);
+        setColour(juce::Slider::rotarySliderFillColourId, colours::accent);
+        setColour(juce::Slider::rotarySliderOutlineColourId, colours::cardOutline);
         setColour(juce::Slider::trackColourId, colours::accent.withAlpha(0.6f));
         setColour(juce::Slider::backgroundColourId, colours::cardOutline);
         setColour(juce::Slider::textBoxTextColourId, colours::text);
@@ -62,6 +64,21 @@ public:
     juce::Font getTextButtonFont(juce::TextButton&, int) override
     {
         return juce::Font(juce::FontOptions(15.0f, juce::Font::bold));
+    }
+
+    // Rotary sliders get a big bold readout — the value must be legible at a
+    // glance; linear sliders keep the default compact textbox.
+    juce::Label* createSliderTextBox(juce::Slider& slider) override
+    {
+        auto* label = LookAndFeel_V4::createSliderTextBox(slider);
+        if (slider.getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
+        {
+            label->setFont(juce::Font(juce::FontOptions(19.0f, juce::Font::bold)));
+            label->setColour(juce::Label::textColourId, colours::accent);
+            label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+            label->setJustificationType(juce::Justification::centred);
+        }
+        return label;
     }
 };
 } // namespace autotrim
