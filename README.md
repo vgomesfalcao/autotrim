@@ -22,6 +22,8 @@ Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o
   - Bateria é por batida (estilo Drum Leveler): rider contínuo bombearia entre os hits.
   - Zona morta de ±1 dB em volta do target: trim correto fica intocado.
 
+- **Proteção contra overload** (sempre ativa com a automação ligada, mesmo sem rider): se a saída passar de `target + 3 dB` **5 vezes em 3 segundos** (overload contínuo conta 1 evento a cada 300 ms), o plugin corta automaticamente um offset de trim para trazer o pior pico de volta ao target (corte máximo −12 dB). O ajuste aparece **em vermelho** (badge `PROT` no canal, status no painel, nome em vermelho no modo compacto). Uma nova medição zera a proteção.
+
 Target, trim, automação e rider são **parâmetros do host** (automatizáveis e salvos na sessão); nome, modo painel e as configurações globais do painel também são salvos.
 
 ## Build no Linux (via Docker)
