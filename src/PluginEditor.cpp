@@ -174,6 +174,96 @@ void MeterBar::paint(juce::Graphics& g)
 }
 
 //==============================================================================
+void StatusStrip::update(float trimTotalDb, float riderOffsetDb, float rideRangeDb,
+                         bool riderEnabled, State newState)
+{
+    const bool changed = std::abs(trimTotalDb - trimTotal) > 0.05f
+                         || std::abs(riderOffsetDb - offset) > 0.05f
+                         || std::abs(rideRangeDb - range) > 0.05f || riderEnabled != riderOn
+                         || newState != state;
+    if (! changed)
+        return;
+    trimTotal = trimTotalDb;
+    offset = riderOffsetDb;
+    range = juce::jmax(0.1f, rideRangeDb);
+    riderOn = riderEnabled;
+    state = newState;
+    repaint();
+}
+
+void StatusStrip::paint(juce::Graphics& g)
+{
+    auto r = getLocalBounds().toFloat();
+
+    // TRIM chip: the total gain currently applied, always readable at a glance.
+    auto chip = r.removeFromLeft(150.0f);
+    g.setColour(colours::card);
+    g.fillRoundedRectangle(chip, 8.0f);
+    g.setColour(colours::cardOutline);
+    g.drawRoundedRectangle(chip.reduced(0.5f), 8.0f, 1.0f);
+    auto chipInner = chip.reduced(12.0f, 4.0f);
+    g.setColour(colours::subtext);
+    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold))
+                  .withExtraKerningFactor(0.12f));
+    g.drawText("TRIM", chipInner.removeFromLeft(40.0f), juce::Justification::centredLeft);
+    g.setColour(colours::accent);
+    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    g.drawText(formatDb(trimTotal), chipInner, juce::Justification::centredRight);
+
+    r.removeFromLeft(14.0f);
+
+    if (state == measuring)
+    {
+        g.setColour(colours::info);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText(utf8("medindo…"), r, juce::Justification::centredLeft);
+        return;
+    }
+    if (state == noSignal)
+    {
+        g.setColour(colours::warning);
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawText(utf8("sem sinal na última medição"), r, juce::Justification::centredLeft);
+        return;
+    }
+
+    // Rider: bipolar center-zero bar within the profile's ride range.
+    const float alpha = riderOn ? 1.0f : 0.35f;
+    g.setColour(colours::subtext.withMultipliedAlpha(riderOn ? 1.0f : 0.6f));
+    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold))
+                  .withExtraKerningFactor(0.12f));
+    g.drawText("RIDER", r.removeFromLeft(46.0f), juce::Justification::centredLeft);
+
+    auto valueArea = r.removeFromRight(56.0f);
+    auto barArea = r.withSizeKeepingCentre(r.getWidth() - 8.0f, 10.0f);
+    g.setColour(colours::cardOutline.withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(barArea, 5.0f);
+
+    const float cx = barArea.getCentreX();
+    if (riderOn)
+    {
+        const float frac = juce::jlimit(-1.0f, 1.0f, offset / range);
+        const float w = std::abs(frac) * (barArea.getWidth() / 2.0f - 2.0f);
+        if (w > 0.5f)
+        {
+            const auto fill = frac >= 0.0f
+                                  ? juce::Rectangle<float>(cx, barArea.getY() + 2.0f, w, 6.0f)
+                                  : juce::Rectangle<float>(cx - w, barArea.getY() + 2.0f, w, 6.0f);
+            g.setColour(colours::accent);
+            g.fillRoundedRectangle(fill, 3.0f);
+        }
+    }
+    // Center (zero) notch
+    g.setColour(colours::text.withAlpha(0.5f * alpha));
+    g.fillRect(cx - 0.75f, barArea.getY() - 2.0f, 1.5f, barArea.getHeight() + 4.0f);
+
+    g.setColour(riderOn ? colours::text : colours::subtext);
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    g.drawText(riderOn ? formatDb(offset) : juce::String("off"), valueArea,
+               juce::Justification::centredRight);
+}
+
+//==============================================================================
 ChannelView::ChannelView(AutoTrimProcessor& processor)
     : proc(processor),
       targetAttachment(proc.apvts, "target", targetSlider),
@@ -241,9 +331,6 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCompactBar(trimSlider, " dB", 0.0);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
-    statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
-    statusLabel.setJustificationType(juce::Justification::centred);
-
     advancedButton.setButtonText(utf8("▸  Avançado"));
     advancedButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     advancedButton.setColour(juce::TextButton::textColourOffId, colours::subtext);
@@ -268,7 +355,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
-             &outMeterCaption, &targetCaption, &trimCaption, &statusLabel, &sectionLabel,
+             &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle,
              &advancedButton })
         addAndMakeVisible(c);
@@ -303,8 +390,8 @@ void ChannelView::resized()
     auto outRow = r.removeFromTop(26);
     outMeterCaption.setBounds(outRow.removeFromLeft(64));
     outMeter.setBounds(outRow.reduced(0, 2));
-    r.removeFromTop(4);
-    statusLabel.setBounds(r.removeFromTop(20));
+    r.removeFromTop(8);
+    statusStrip.setBounds(r.removeFromTop(36));
     r.removeFromTop(12);
 
     // Set-once configuration card ("Avançado" adds a collapsed row)
@@ -342,9 +429,9 @@ void ChannelView::resized()
 
 int ChannelView::desiredHeight() const
 {
-    // Fixed sections (title, name row, meters, status, gaps, panel toggle,
-    // margins) plus the config card, whose height follows the disclosure.
-    return 278 + (advancedOpen ? 222 : 190);
+    // Fixed sections (title, name row, meters, status strip, gaps, panel
+    // toggle, margins) plus the config card, which follows the disclosure.
+    return 298 + (advancedOpen ? 222 : 190);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -389,27 +476,14 @@ void ChannelView::refresh()
     outMeter.setScaleAnchorDb(target);
     outMeter.setTickDb(target);
 
-    if (proc.shared->measuring.load())
-    {
-        statusLabel.setText(utf8("medindo…"), juce::dontSendNotification);
-        statusLabel.setColour(juce::Label::textColourId, colours::info);
-    }
-    else if (proc.shared->noSignal.load())
-    {
-        statusLabel.setText(utf8("sem sinal na última medição"), juce::dontSendNotification);
-        statusLabel.setColour(juce::Label::textColourId, colours::warning);
-    }
-    else if (std::abs(riderOffset) > 0.05f)
-    {
-        statusLabel.setText(utf8("rider: ") + formatDb(riderOffset) + utf8(" → total ")
-                                + formatDb(trim + riderOffset),
-                            juce::dontSendNotification);
-        statusLabel.setColour(juce::Label::textColourId, colours::accent);
-    }
-    else
-    {
-        statusLabel.setText("", juce::dontSendNotification);
-    }
+    const auto state = proc.shared->measuring.load() ? StatusStrip::measuring
+                       : proc.shared->noSignal.load() ? StatusStrip::noSignal
+                                                      : StatusStrip::normal;
+    const bool riderEnabled =
+        proc.shared->isAutomationOn() && proc.shared->riderOn->load() > 0.5f;
+    const auto& profile = dsp::profileFor((int) proc.shared->profile->load());
+    statusStrip.update(trim + riderOffset, riderOffset, profile.rideRangeDb, riderEnabled,
+                       state);
 }
 
 //==============================================================================

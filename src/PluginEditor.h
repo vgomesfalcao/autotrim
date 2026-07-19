@@ -33,6 +33,24 @@ private:
     bool tickVisible = true;
 };
 
+// Designed status strip: TRIM chip with the total applied gain, plus a
+// bipolar center-zero bar showing the rider's live correction within its
+// ride range. Replaces the old hard-to-read text line.
+class StatusStrip : public juce::Component
+{
+public:
+    enum State { normal = 0, measuring, noSignal };
+
+    void update(float trimTotalDb, float riderOffsetDb, float rideRangeDb, bool riderEnabled,
+                State newState);
+    void paint(juce::Graphics& g) override;
+
+private:
+    float trimTotal = 0.0f, offset = 0.0f, range = 6.0f;
+    bool riderOn = false;
+    State state = normal;
+};
+
 // Per-channel view: name, meter, target, trim readout and toggles.
 class ChannelView : public juce::Component
 {
@@ -54,7 +72,8 @@ private:
     juce::TextEditor nameEditor;
     juce::ComboBox presetBox, profileBox;
     MeterBar meter, outMeter;
-    juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption, statusLabel;
+    StatusStrip statusStrip;
+    juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption;
     juce::Slider targetSlider, trimSlider, sensSlider;
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
