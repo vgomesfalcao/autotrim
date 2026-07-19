@@ -33,6 +33,7 @@ struct ChannelShared
 
     std::atomic<float> peakPreTrim { 0.0f };   // linear, decaying meter value
     std::atomic<float> peakPostTrim { 0.0f };  // linear, decaying, after trim
+    std::atomic<float> lufsShort { -100.0f };  // panel instance only (master mix)
     std::atomic<float> measuredPeak { 0.0f };  // linear, max during measurement
     std::atomic<float> riderOffsetDb { 0.0f };   // continuous-mode correction
     std::atomic<float> protectOffsetDb { 0.0f }; // overload-protection cut (<= 0)

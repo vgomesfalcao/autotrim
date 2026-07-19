@@ -22,6 +22,7 @@ public:
     // meter marks target − trim on a target-anchored scale).
     void setTickDb(float newTickDb);
     void setTickVisible(bool shouldShow) { tickVisible = shouldShow; }
+    void setUnit(const juce::String& newUnit) { unit = newUnit; }
     void paint(juce::Graphics& g) override;
 
 private:
@@ -31,6 +32,7 @@ private:
     float anchorDb = -10.0f;
     float tickDb = -10.0f;
     bool tickVisible = true;
+    juce::String unit { " dB" };
 };
 
 // Designed status strip: TRIM chip with the total applied gain, plus a
@@ -139,6 +141,8 @@ private:
 
     AutoTrimProcessor& proc;
     juce::TextButton measureButton { "Regular ganhos" }, expandButton;
+    juce::Label lufsCaption;
+    MeterBar lufsMeter;
     double progressValue = 0.0;
     juce::ProgressBar progressBar { progressValue };
     juce::Viewport viewport;
@@ -158,7 +162,8 @@ public:
 private:
     AutoTrimProcessor& proc;
 
-    juce::Label title, durationCaption, maxTrimCaption, listHeader, emptyLabel;
+    juce::Label title, durationCaption, maxTrimCaption, listHeader, emptyLabel, lufsCaption;
+    MeterBar lufsMeter;
     juce::Slider durationSlider, maxTrimSlider;
     juce::TextButton measureButton { "Regular ganhos de todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };

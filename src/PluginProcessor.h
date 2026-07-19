@@ -81,8 +81,16 @@ private:
     float protOffenderMaxLin = 0.0f;
     float protSinceOverS = 1000.0f;
 
+    // LUFS analysis (panel instance only, master passthrough)
+    dsp::Biquad lufsShelf[2], lufsHighpass[2];
+    double lufsSlotSumSq[30] = {};
+    int lufsSlotSamples[30] = {};
+    int lufsSlotIndex = 0;
+    float lufsSlotElapsed = 0.0f;
+
     void resetHitState();
     void resetProtectionWindow();
+    void analyzeLoudness(const juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutoTrimProcessor)
 };

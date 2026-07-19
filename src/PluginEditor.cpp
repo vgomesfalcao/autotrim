@@ -10,7 +10,7 @@ namespace
 {
     constexpr int kChannelWidth = 460;
     constexpr int kPanelWidth = 860;
-    constexpr int kPanelHeight = 580;
+    constexpr int kPanelHeight = 616;
     constexpr int kRowHeight = 46;
     constexpr int kColName = 160;
     constexpr int kColPreset = 120;
@@ -193,7 +193,9 @@ void MeterBar::paint(juce::Graphics& g)
 
     g.setColour(colours::text);
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
-    const auto text = levelDb <= -90.0f ? juce::String("-inf dB") : formatDb(levelDb);
+    const auto text = levelDb <= -90.0f
+                          ? "-inf" + unit
+                          : (levelDb >= 0.0f ? "+" : "") + juce::String(levelDb, 1) + unit;
     g.drawText(text, getLocalBounds().reduced(6, 0), juce::Justification::centredRight);
 }
 
@@ -668,8 +670,8 @@ namespace
 {
     constexpr int kMiniWidth = 320;
     constexpr int kMiniRowHeight = 26;
-    // Margins (10+10) + button bar (30) + gap (8): everything except the rows.
-    constexpr int kMiniChromeHeight = 58;
+    // Margins (10+10) + button bar (30) + LUFS row (6+20+6): all but the rows.
+    constexpr int kMiniChromeHeight = 82;
 } // namespace
 
 MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
@@ -718,8 +720,13 @@ MiniPanelView::MiniPanelView(AutoTrimProcessor& processor) : proc(processor)
     viewport.setScrollBarsShown(true, false);
     progressBar.setTextToDisplay(utf8("medindo…"));
 
+    styleCaption(lufsCaption, "LUFS");
+    lufsMeter.setUnit(" LUFS");
+    lufsMeter.setScaleAnchorDb(dsp::kLufsTargetDb);
+    lufsMeter.setTickDb(dsp::kLufsTargetDb);
+
     for (auto* c : std::initializer_list<juce::Component*> {
-             &measureButton, &expandButton, &progressBar, &viewport })
+             &measureButton, &expandButton, &progressBar, &viewport, &lufsCaption, &lufsMeter })
         addAndMakeVisible(c);
     progressBar.setVisible(false);
 }
@@ -732,7 +739,11 @@ void MiniPanelView::resized()
     top.removeFromRight(6);
     measureButton.setBounds(top);
     progressBar.setBounds(top);
-    r.removeFromTop(8);
+    r.removeFromTop(6);
+    auto lufsRow = r.removeFromTop(20);
+    lufsCaption.setBounds(lufsRow.removeFromLeft(44));
+    lufsMeter.setBounds(lufsRow);
+    r.removeFromTop(6);
     viewport.setBounds(r);
     layoutRows();
 }
@@ -744,6 +755,8 @@ void MiniPanelView::refresh()
     progressValue = running ? (double) measurement::progress() : 0.0;
     measureButton.setVisible(! running);
     progressBar.setVisible(running);
+
+    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()));
 
     rebuildRowsIfNeeded();
     for (auto& row : rows)
@@ -822,6 +835,13 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 
     progressBar.setTextToDisplay(utf8("medindo… (canais prontos)"));
 
+    styleCaption(lufsCaption, "LUFS (master)");
+    lufsMeter.setUnit(" LUFS");
+    lufsMeter.setScaleAnchorDb(dsp::kLufsTargetDb);
+    lufsMeter.setTickDb(dsp::kLufsTargetDb);
+    addAndMakeVisible(lufsCaption);
+    addAndMakeVisible(lufsMeter);
+
     panelToggle.setToggleState(true, juce::dontSendNotification);
     panelToggle.onClick = [this]
     {
@@ -860,7 +880,12 @@ void PanelView::resized()
     measureButton.setBounds(actionRow);
     cancelButton.setBounds(actionRow.removeFromRight(110));
     progressBar.setBounds(actionRow.withTrimmedRight(8));
-    r.removeFromTop(14);
+    r.removeFromTop(10);
+
+    auto lufsRow = r.removeFromTop(24);
+    lufsCaption.setBounds(lufsRow.removeFromLeft(110));
+    lufsMeter.setBounds(lufsRow.reduced(0, 1));
+    r.removeFromTop(12);
 
     auto bottomRow = r.removeFromBottom(28);
     compactButton.setBounds(bottomRow.removeFromRight(140));
@@ -883,6 +908,7 @@ void PanelView::refresh()
     measureButton.setVisible(! running);
     progressBar.setVisible(running);
     cancelButton.setVisible(running);
+    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()));
 
     rebuildRowsIfNeeded();
     for (auto& row : rows)

@@ -82,6 +82,67 @@ constexpr float kMeasArmTimeoutS = 90.0f;
 // single timid transient never defines the trim alone.
 constexpr int kMeasDrumHits = 4;
 
+// Master loudness meter (panel instance): short-term LUFS per ITU-R BS.1770
+// (K-weighting + 3 s window), no gating (gating only applies to integrated).
+constexpr float kLufsTargetDb = -12.0f;
+constexpr float kLufsWindowS = 3.0f;
+constexpr float kLufsSlotS = 0.1f;
+constexpr int kLufsSlots = 30;
+constexpr float kLufsFloorDb = -70.0f;
+
+// Transposed direct-form II biquad.
+struct Biquad
+{
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    float z1 = 0.0f, z2 = 0.0f;
+
+    float process(float x)
+    {
+        const float y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
+        return y;
+    }
+
+    void reset() { z1 = z2 = 0.0f; }
+};
+
+// K-weighting stage 1: high shelf (+~4 dB), BS.1770 reference parameters,
+// redesigned for the running sample rate via the RBJ cookbook.
+inline Biquad makeKShelf(float fs)
+{
+    const float G = 3.999843853973347f, f0 = 1681.974450955533f, Q = 0.7071752369554196f;
+    const float A = std::pow(10.0f, G / 40.0f);
+    const float w0 = 2.0f * 3.14159265358979f * f0 / fs;
+    const float alpha = std::sin(w0) / (2.0f * Q);
+    const float c = std::cos(w0), sqA = std::sqrt(A);
+    const float a0 = (A + 1.0f) - (A - 1.0f) * c + 2.0f * sqA * alpha;
+    Biquad b;
+    b.b0 = (A * ((A + 1.0f) + (A - 1.0f) * c + 2.0f * sqA * alpha)) / a0;
+    b.b1 = (-2.0f * A * ((A - 1.0f) + (A + 1.0f) * c)) / a0;
+    b.b2 = (A * ((A + 1.0f) + (A - 1.0f) * c - 2.0f * sqA * alpha)) / a0;
+    b.a1 = (2.0f * ((A - 1.0f) - (A + 1.0f) * c)) / a0;
+    b.a2 = ((A + 1.0f) - (A - 1.0f) * c - 2.0f * sqA * alpha) / a0;
+    return b;
+}
+
+// K-weighting stage 2: high-pass, BS.1770 reference parameters.
+inline Biquad makeKHighpass(float fs)
+{
+    const float f0 = 38.13547087602444f, Q = 0.5003270373238773f;
+    const float w0 = 2.0f * 3.14159265358979f * f0 / fs;
+    const float alpha = std::sin(w0) / (2.0f * Q);
+    const float c = std::cos(w0);
+    const float a0 = 1.0f + alpha;
+    Biquad b;
+    b.b0 = ((1.0f + c) / 2.0f) / a0;
+    b.b1 = (-(1.0f + c)) / a0;
+    b.b2 = ((1.0f + c) / 2.0f) / a0;
+    b.a1 = (-2.0f * c) / a0;
+    b.a2 = (1.0f - alpha) / a0;
+    return b;
+}
+
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
 constexpr float kHitRetriggerS = 0.100f; // minimum spacing between hits

@@ -69,6 +69,64 @@ void AutoTrimProcessor::prepareToPlay(double sampleRate, int)
     hitRetriggerSamples = juce::jmax(1, (int) (dsp::kHitRetriggerS * sr));
     gainLin = dsp::dbToGain(shared->effectiveTrimDb());
     resetHitState();
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        lufsShelf[ch] = dsp::makeKShelf(sr);
+        lufsHighpass[ch] = dsp::makeKHighpass(sr);
+    }
+    for (int i = 0; i < dsp::kLufsSlots; ++i)
+    {
+        lufsSlotSumSq[i] = 0.0;
+        lufsSlotSamples[i] = 0;
+    }
+    lufsSlotIndex = 0;
+    lufsSlotElapsed = 0.0f;
+}
+
+// Short-term LUFS (BS.1770): K-weighted mean square over a 3 s window,
+// channels summed. Analysis only — the buffer is never modified.
+void AutoTrimProcessor::analyzeLoudness(const juce::AudioBuffer<float>& buffer)
+{
+    const int numSamples = buffer.getNumSamples();
+    const int numChannels = juce::jmin(2, buffer.getNumChannels());
+
+    double sumSq = 0.0;
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        const float* data = buffer.getReadPointer(ch);
+        auto& shelf = lufsShelf[ch];
+        auto& highpass = lufsHighpass[ch];
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const float y = highpass.process(shelf.process(data[i]));
+            sumSq += (double) y * (double) y;
+        }
+    }
+
+    lufsSlotSumSq[lufsSlotIndex] += sumSq;
+    lufsSlotSamples[lufsSlotIndex] += numSamples;
+    lufsSlotElapsed += (float) numSamples / (float) currentSampleRate;
+    while (lufsSlotElapsed >= dsp::kLufsSlotS)
+    {
+        lufsSlotElapsed -= dsp::kLufsSlotS;
+        lufsSlotIndex = (lufsSlotIndex + 1) % dsp::kLufsSlots;
+        lufsSlotSumSq[lufsSlotIndex] = 0.0;
+        lufsSlotSamples[lufsSlotIndex] = 0;
+    }
+
+    double totalSq = 0.0;
+    long totalSamples = 0;
+    for (int i = 0; i < dsp::kLufsSlots; ++i)
+    {
+        totalSq += lufsSlotSumSq[i];
+        totalSamples += lufsSlotSamples[i];
+    }
+    float lufs = dsp::kLufsFloorDb;
+    if (totalSamples > 0 && totalSq > 0.0)
+        lufs = juce::jmax(dsp::kLufsFloorDb,
+                          -0.691f + 10.0f * (float) std::log10(totalSq / (double) totalSamples));
+    shared->lufsShort.store(lufs);
 }
 
 void AutoTrimProcessor::resetHitState()
@@ -136,6 +194,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             shared->protectOffsetDb.store(0.0f);
             shared->protectionActive.store(false);
         }
+        // Analysis only: the master mix passes through untouched.
+        analyzeLoudness(buffer);
         return;
     }
 
