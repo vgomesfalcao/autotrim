@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Dsp.h"
 #include "Registry.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
