@@ -101,6 +101,7 @@ public:
 private:
     juce::Label nameLabel, trimLabel, statusLabel;
     MeterBar meter, outMeter;
+    juce::TextButton regButton;
     juce::ComboBox presetBox;
     juce::ToggleButton automationToggle;
 };
@@ -118,6 +119,7 @@ public:
 private:
     juce::Label nameLabel;
     MeterBar outMeter;
+    juce::TextButton regButton;
 };
 
 // Minimal panel for piloting the live show: measure button + one meter per

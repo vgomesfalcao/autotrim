@@ -79,6 +79,28 @@ namespace
         label.setColour(juce::Label::textColourId, colours::subtext);
     }
 
+    // Small per-row "regulate this channel" button (panel + compact rows).
+    void styleRegButton(juce::TextButton& button, const std::shared_ptr<ChannelShared>& shared)
+    {
+        button.setButtonText("Reg");
+        button.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+        button.setColour(juce::TextButton::textColourOffId, colours::text);
+        button.onClick = [&button, shared]
+        {
+            if (shared->measuring.load())
+                measurement::cancel();
+            else if (! measurement::isRunning())
+                measurement::startChannel(shared, registry::measDurationS.load());
+        };
+    }
+
+    void refreshRegButton(juce::TextButton& button, const ChannelShared& shared)
+    {
+        const bool mine = shared.measuring.load();
+        button.setButtonText(mine ? "X" : "Reg");
+        button.setEnabled(! measurement::isRunning() || mine);
+    }
+
     void writeBoolParam(juce::RangedAudioParameter* param, bool value)
     {
         if (param == nullptr)
@@ -529,9 +551,11 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
         presetBox.setSelectedId(0, juce::dontSendNotification);
     };
 
+    styleRegButton(regButton, shared);
+
     for (auto* c : std::initializer_list<juce::Component*> {
-             &nameLabel, &meter, &outMeter, &presetBox, &trimLabel, &automationToggle,
-             &statusLabel })
+             &nameLabel, &meter, &outMeter, &regButton, &presetBox, &trimLabel,
+             &automationToggle, &statusLabel })
         addAndMakeVisible(c);
 }
 
@@ -544,6 +568,8 @@ void PanelRow::resized()
     trimLabel.setBounds(r.removeFromRight(kColTrim));
     presetBox.setBounds(r.removeFromRight(kColPreset).reduced(0, 8));
     auto meterArea = r.reduced(8, 5);
+    regButton.setBounds(meterArea.removeFromRight(46).reduced(2, 5));
+    meterArea.removeFromRight(6);
     meter.setBounds(meterArea.removeFromTop((meterArea.getHeight() - 2) / 2));
     meterArea.removeFromTop(2);
     outMeter.setBounds(meterArea);
@@ -571,6 +597,7 @@ void PanelRow::refresh()
 
     const bool automationOn = shared->isAutomationOn();
     automationToggle.setToggleState(automationOn, juce::dontSendNotification);
+    refreshRegButton(regButton, *shared);
 
     if (shared->measuring.load())
     {
@@ -619,20 +646,25 @@ MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std:
 {
     nameLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     nameLabel.setColour(juce::Label::textColourId, colours::text);
+    styleRegButton(regButton, shared);
     addAndMakeVisible(nameLabel);
     addAndMakeVisible(outMeter);
+    addAndMakeVisible(regButton);
 }
 
 void MiniPanelRow::resized()
 {
     auto r = getLocalBounds().reduced(2);
     nameLabel.setBounds(r.removeFromLeft(88));
+    regButton.setBounds(r.removeFromRight(42).reduced(0, 2));
+    r.removeFromRight(6);
     outMeter.setBounds(r.reduced(0, 4));
 }
 
 void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    refreshRegButton(regButton, *shared);
     // Red name = overload protection engaged on this channel.
     nameLabel.setColour(juce::Label::textColourId,
                         shared->protectionActive.load() ? colours::meterHigh : colours::text);
