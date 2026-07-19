@@ -28,8 +28,8 @@ private:
     float mapDbToFrac(float db) const;
 
     float levelDb = -200.0f;
-    float anchorDb = -18.0f;
-    float tickDb = -18.0f;
+    float anchorDb = -10.0f;
+    float tickDb = -10.0f;
     bool tickVisible = true;
 };
 

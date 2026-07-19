@@ -540,7 +540,8 @@ void PanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
     const float trim = shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f;
-    const float target = shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f;
+    const float target =
+        shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
     meter.setLevelLin(shared->peakPreTrim.load());
     meter.setScaleAnchorDb(target);
     meter.setTickDb(target - (trim + shared->riderOffsetDb.load()));
@@ -608,7 +609,8 @@ void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    const float target = shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f;
+    const float target =
+        shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
     outMeter.setScaleAnchorDb(target);
     outMeter.setTickDb(target);
 }

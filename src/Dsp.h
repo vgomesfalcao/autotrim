@@ -10,7 +10,7 @@ namespace autotrim::dsp
 // Peaks below this level mean "no signal": measurement skips the channel and
 // the rider freezes.
 constexpr float kGateDb = -60.0f;
-constexpr float kDefaultTargetDb = -18.0f;
+constexpr float kDefaultTargetDb = -10.0f;
 constexpr float kDefaultMaxTrimDb = 24.0f;
 constexpr float kDefaultMeasDurationS = 10.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
