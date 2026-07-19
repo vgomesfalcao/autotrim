@@ -174,16 +174,14 @@ void MeterBar::paint(juce::Graphics& g)
 }
 
 //==============================================================================
-void StatusStrip::update(float trimTotalDb, float riderOffsetDb, float rideRangeDb,
-                         bool riderEnabled, State newState, float protectDb)
+void StatusStrip::update(float riderOffsetDb, float rideRangeDb, bool riderEnabled,
+                         State newState, float protectDb)
 {
-    const bool changed = std::abs(trimTotalDb - trimTotal) > 0.05f
-                         || std::abs(riderOffsetDb - offset) > 0.05f
+    const bool changed = std::abs(riderOffsetDb - offset) > 0.05f
                          || std::abs(rideRangeDb - range) > 0.05f || riderEnabled != riderOn
                          || newState != state || std::abs(protectDb - protect) > 0.05f;
     if (! changed)
         return;
-    trimTotal = trimTotalDb;
     offset = riderOffsetDb;
     range = juce::jmax(0.1f, rideRangeDb);
     riderOn = riderEnabled;
@@ -195,23 +193,6 @@ void StatusStrip::update(float trimTotalDb, float riderOffsetDb, float rideRange
 void StatusStrip::paint(juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-
-    // GANHO chip: the total gain currently applied, always readable at a glance.
-    auto chip = r.removeFromLeft(162.0f);
-    g.setColour(colours::card);
-    g.fillRoundedRectangle(chip, 8.0f);
-    g.setColour(colours::cardOutline);
-    g.drawRoundedRectangle(chip.reduced(0.5f), 8.0f, 1.0f);
-    auto chipInner = chip.reduced(12.0f, 4.0f);
-    g.setColour(colours::subtext);
-    g.setFont(juce::Font(juce::FontOptions(10.5f, juce::Font::bold))
-                  .withExtraKerningFactor(0.12f));
-    g.drawText("GANHO", chipInner.removeFromLeft(52.0f), juce::Justification::centredLeft);
-    g.setColour(colours::accent);
-    g.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
-    g.drawText(formatDb(trimTotal), chipInner, juce::Justification::centredRight);
-
-    r.removeFromLeft(14.0f);
 
     // Overload protection engaged: red badge, impossible to miss.
     if (protect < -0.05f)
@@ -343,7 +324,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
 
     trimSlider.setName("hero");
     styleKnob(trimSlider, " dB", 0.0);
-    trimSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 130, 32);
+    trimSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 150, 38);
     styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
@@ -501,8 +482,7 @@ void ChannelView::refresh()
         proc.shared->isAutomationOn() && proc.shared->riderOn->load() > 0.5f;
     const auto& profile = dsp::profileFor((int) proc.shared->profile->load());
     const float protect = proc.shared->protectOffsetDb.load();
-    statusStrip.update(trim + riderOffset + protect, riderOffset, profile.rideRangeDb,
-                       riderEnabled, state, protect);
+    statusStrip.update(riderOffset, profile.rideRangeDb, riderEnabled, state, protect);
 }
 
 //==============================================================================

@@ -76,13 +76,34 @@ public:
         if (slider.getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
         {
             // The "hero" knob (Ganho) gets an even bigger readout.
-            const float size = slider.getName() == "hero" ? 26.0f : 19.0f;
+            const float size = slider.getName() == "hero" ? 28.0f : 19.0f;
             label->setFont(juce::Font(juce::FontOptions(size, juce::Font::bold)));
             label->setColour(juce::Label::textColourId, colours::accent);
             label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
             label->setJustificationType(juce::Justification::centred);
         }
         return label;
+    }
+
+    // The hero knob's readout is drawn as a chip: rounded card, accent bold
+    // value — the single gain display of the plugin.
+    void drawLabel(juce::Graphics& g, juce::Label& label) override
+    {
+        auto* slider = dynamic_cast<juce::Slider*>(label.getParentComponent());
+        if (slider != nullptr && slider->getName() == "hero" && ! label.isBeingEdited())
+        {
+            auto r = label.getLocalBounds().toFloat();
+            g.setColour(colours::card);
+            g.fillRoundedRectangle(r, 9.0f);
+            g.setColour(colours::cardOutline);
+            g.drawRoundedRectangle(r.reduced(0.5f), 9.0f, 1.0f);
+            g.setColour(colours::accent);
+            g.setFont(label.getFont());
+            g.drawText(label.getText(), label.getLocalBounds().reduced(8, 0),
+                       juce::Justification::centred);
+            return;
+        }
+        LookAndFeel_V4::drawLabel(g, label);
     }
 };
 } // namespace autotrim
