@@ -75,6 +75,7 @@ private:
     bool protOverActive = false;
     float protOverElapsedS = 0.0f;
     float protOffenderMaxLin = 0.0f;
+    float protSinceOverS = 1000.0f;
 
     void resetHitState();
     void resetProtectionWindow();

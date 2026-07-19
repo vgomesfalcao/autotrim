@@ -210,6 +210,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             dsp::dbToGain(shared->targetDb->load() + dsp::kProtectMarginDb);
         if (blockPeakPost > overThresholdLin)
         {
+            protSinceOverS = 0.0f;
             protOffenderMaxLin = juce::jmax(protOffenderMaxLin, blockPeakPost);
             bool newEvent = false;
             if (! protOverActive)
@@ -250,6 +251,30 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         else
         {
             protOverActive = false;
+            protSinceOverS += dt;
+        }
+
+        // The cut is temporary: once the overs stop for the hold period and
+        // the recent output peak leaves headroom for the give-back, glide the
+        // protection back to zero. Hot signal returning re-triggers the cut.
+        if (protectDb < 0.0f && protSinceOverS > dsp::kProtectHoldS)
+        {
+            const float recentOutDb = dsp::gainToDb(shared->peakPostTrim.load());
+            const float thresholdDb = shared->targetDb->load() + dsp::kProtectMarginDb;
+            if (recentOutDb + 1.0f <= thresholdDb)
+            {
+                const float released =
+                    juce::jmin(0.0f, protectDb + dsp::kProtectReleaseDbPerS * dt);
+                if (released >= -0.05f)
+                {
+                    shared->protectOffsetDb.store(0.0f);
+                    shared->protectionActive.store(false);
+                }
+                else
+                {
+                    shared->protectOffsetDb.store(released);
+                }
+            }
         }
     }
 

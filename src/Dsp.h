@@ -69,6 +69,10 @@ constexpr float kProtectWindowS = 3.0f;
 constexpr float kProtectMaxCutDb = 12.0f;
 // A continuously-over passage counts one event per rearm period.
 constexpr float kProtectRearmS = 0.3f;
+// The cut is temporary: after this long with no overs, and with enough
+// headroom, it glides back to zero at the release rate.
+constexpr float kProtectHoldS = 5.0f;
+constexpr float kProtectReleaseDbPerS = 0.5f;
 
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
