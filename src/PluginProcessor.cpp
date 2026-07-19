@@ -122,6 +122,23 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     for (int ch = getMainBusNumInputChannels(); ch < numChannels; ++ch)
         buffer.copyFrom(ch, 0, buffer, 0, 0, numSamples);
 
+    // A panel-mode instance is management-only: pure passthrough. It must
+    // never apply gain, ride, or trigger overload protection — it usually
+    // sits on the master bus, where a protective cut would duck the whole
+    // show (this happened live).
+    if (shared->panelMode.load())
+    {
+        gainLin = 1.0f;
+        if (shared->riderOffsetDb.load() != 0.0f)
+            shared->riderOffsetDb.store(0.0f);
+        if (shared->protectOffsetDb.load() != 0.0f || shared->protectionActive.load())
+        {
+            shared->protectOffsetDb.store(0.0f);
+            shared->protectionActive.store(false);
+        }
+        return;
+    }
+
     const float maxTrim = registry::maxTrimDb.load();
     const bool automationOn = shared->isAutomationOn();
     const bool riderOn = automationOn && shared->riderOn->load() > 0.5f;
