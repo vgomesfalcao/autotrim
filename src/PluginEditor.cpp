@@ -485,8 +485,16 @@ void ChannelView::refresh()
     // Per-channel measurements are polled here too, so they finish even when
     // no panel window is open.
     measurement::poll();
-    measureButton.setButtonText(proc.shared->measuring.load() ? "Cancelar"
-                                                              : "Regular ganho");
+    juce::String measureText = "Regular ganho";
+    if (proc.shared->measuring.load())
+    {
+        measureText = "Cancelar";
+        if (proc.shared->measStarted.load()
+            && dsp::profileFor((int) proc.shared->profile->load()).hitBased)
+            measureText += " (" + juce::String((int) proc.shared->measHitCount.load()) + "/"
+                           + juce::String(dsp::kMeasDrumHits) + " hits)";
+    }
+    measureButton.setButtonText(measureText);
     measureButton.setEnabled(! measurement::isRunning() || proc.shared->measuring.load());
 
     // The big readout mirrors the fader; the rider's live correction is shown
@@ -615,9 +623,15 @@ void PanelRow::refresh()
 
     if (shared->measuring.load())
     {
-        statusLabel.setText(shared->measStarted.load() ? utf8("medindo…")
-                                                       : utf8("aguardando sinal…"),
-                            juce::dontSendNotification);
+        juce::String text = utf8("aguardando sinal…");
+        if (shared->measStarted.load())
+        {
+            text = utf8("medindo…");
+            if (dsp::profileFor((int) shared->profile->load()).hitBased)
+                text += " " + juce::String((int) shared->measHitCount.load()) + "/"
+                        + juce::String(dsp::kMeasDrumHits);
+        }
+        statusLabel.setText(text, juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);
     }
     else if (shared->protectionActive.load())

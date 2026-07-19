@@ -18,6 +18,7 @@ namespace
         ch.noSignal.store(false);
         ch.measStarted.store(false);
         ch.measDone.store(false);
+        ch.measHitCount.store(0);
         ch.measuring.store(true);
     }
 

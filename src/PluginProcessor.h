@@ -55,6 +55,7 @@ private:
     uint32_t measEpoch = 0;
     bool measStartedLocal = false;
     int measSamplesLeft = 0;
+    int measHitsCaptured = 0;
     double currentSampleRate = 48000.0;
 
     // Hit detection state (drum profile)

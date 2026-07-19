@@ -148,6 +148,9 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float sensDb = shared->sensitivityDb->load();
     const float sensLin = dsp::dbToGain(sensDb);
     const bool detectHits = riderOn && ! measuring && profile.hitBased;
+    // Drum measurement counts hits (the rider's hit machinery is idle then).
+    const bool countMeasHits = measuring && profile.hitBased;
+    const float measGateLin = dsp::dbToGain(dsp::kGateDb);
     bool hitCompleted = false;
 
     float offsetDb = shared->riderOffsetDb.load();
@@ -193,6 +196,33 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 hitWindowSamplesLeft = hitWindowSamples;
             }
         }
+        else if (countMeasHits)
+        {
+            if (inHit)
+            {
+                if (--hitWindowSamplesLeft <= 0)
+                {
+                    inHit = false;
+                    hitCooldownSamples = hitRetriggerSamples - hitWindowSamples;
+                    ++measHitsCaptured;
+                    shared->measHitCount.store((uint32_t) measHitsCaptured);
+                }
+            }
+            else if (hitCooldownSamples > 0)
+            {
+                --hitCooldownSamples;
+            }
+            else if (framePeak > measGateLin)
+            {
+                inHit = true;
+                hitWindowSamplesLeft = hitWindowSamples;
+                if (! measStartedLocal)
+                {
+                    measStartedLocal = true;
+                    shared->measStarted.store(true);
+                }
+            }
+        }
 
         gainLin += gainCoef * (targetGain - gainLin);
         for (int ch = 0; ch < numChannels; ++ch)
@@ -219,6 +249,9 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         measPeak = 0.0f;
         measStartedLocal = false;
         measSamplesLeft = 0;
+        measHitsCaptured = 0;
+        inHit = false;
+        hitCooldownSamples = 0;
     }
     // Overload protection: if the *output* peaks past target + margin too
     // many times inside the window, cut the trim to protect the downstream
@@ -308,22 +341,41 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
-        if (! measStartedLocal && blockPeak > dsp::dbToGain(dsp::kGateDb))
+        if (profile.hitBased)
         {
-            measStartedLocal = true;
-            shared->measStarted.store(true);
-            measSamplesLeft =
-                (int) (registry::measDurationS.load() * (float) currentSampleRate);
-        }
-        if (measStartedLocal)
-        {
-            measPeak = juce::jmax(measPeak, blockPeak);
-            shared->measuredPeak.store(measPeak);
-            measSamplesLeft -= numSamples;
-            if (measSamplesLeft <= 0)
+            // Drum profile: the window closes after enough distinct hits, so
+            // one isolated transient never defines the trim alone. The hits
+            // themselves are detected per-sample in the loop above.
+            if (measStartedLocal)
             {
-                shared->measuring.store(false);
-                shared->measDone.store(true);
+                measPeak = juce::jmax(measPeak, blockPeak);
+                shared->measuredPeak.store(measPeak);
+                if (measHitsCaptured >= dsp::kMeasDrumHits)
+                {
+                    shared->measuring.store(false);
+                    shared->measDone.store(true);
+                }
+            }
+        }
+        else
+        {
+            if (! measStartedLocal && blockPeak > measGateLin)
+            {
+                measStartedLocal = true;
+                shared->measStarted.store(true);
+                measSamplesLeft =
+                    (int) (registry::measDurationS.load() * (float) currentSampleRate);
+            }
+            if (measStartedLocal)
+            {
+                measPeak = juce::jmax(measPeak, blockPeak);
+                shared->measuredPeak.store(measPeak);
+                measSamplesLeft -= numSamples;
+                if (measSamplesLeft <= 0)
+                {
+                    shared->measuring.store(false);
+                    shared->measDone.store(true);
+                }
             }
         }
     }

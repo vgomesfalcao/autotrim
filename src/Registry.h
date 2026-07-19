@@ -44,6 +44,7 @@ struct ChannelShared
     // arrives and measDone when the window completes.
     std::atomic<bool> measStarted { false };
     std::atomic<bool> measDone { false };
+    std::atomic<uint32_t> measHitCount { 0 }; // drum-profile measurement progress
     std::atomic<bool> noSignal { false };
     std::atomic<bool> alive { true };
     // Bumped when a new measurement starts so the audio thread resets its

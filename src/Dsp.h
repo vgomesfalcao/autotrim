@@ -78,6 +78,9 @@ constexpr float kProtectReleaseDbPerS = 0.5f;
 // sees signal above the gate (isolated sources like toms play at arbitrary
 // moments). Channels that never receive signal time out untouched.
 constexpr float kMeasArmTimeoutS = 90.0f;
+// Drum-profile channels measure by hit count instead of a time window: a
+// single timid transient never defines the trim alone.
+constexpr int kMeasDrumHits = 4;
 
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
