@@ -65,18 +65,18 @@ void AutoTrimProcessor::prepareToPlay(double sampleRate, int)
     currentSampleRate = sampleRate;
     const auto sr = (float) sampleRate;
     gainCoef = dsp::onepoleCoef(dsp::kGainSmoothS, sr);
-    envAttack = dsp::onepoleCoef(dsp::kEnvAttackS, sr);
-    for (int i = 0; i < dsp::kNumProfiles; ++i)
-        envReleaseCoefs[i] = dsp::onepoleCoef(dsp::kProfiles[i].envReleaseS, sr);
     hitWindowSamples = juce::jmax(1, (int) (dsp::kHitWindowS * sr));
     hitRetriggerSamples = juce::jmax(1, (int) (dsp::kHitRetriggerS * sr));
     gainLin = dsp::dbToGain(shared->effectiveTrimDb());
-    envLin = 0.0f;
     resetHitState();
 }
 
 void AutoTrimProcessor::resetHitState()
 {
+    for (auto& slot : holdSlots)
+        slot = 0.0f;
+    holdSlotIndex = 0;
+    holdSlotElapsed = 0.0f;
     inHit = false;
     hitPeak = 0.0f;
     hitWindowSamplesLeft = 0;
@@ -112,8 +112,6 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const auto& profile = dsp::profileFor((int) shared->profile->load());
     const float sensDb = shared->sensitivityDb->load();
     const float sensLin = dsp::dbToGain(sensDb);
-    const float envRelease =
-        envReleaseCoefs[juce::jlimit(0, dsp::kNumProfiles - 1, (int) shared->profile->load())];
     const bool detectHits = riderOn && ! measuring && profile.hitBased;
     bool hitCompleted = false;
 
@@ -132,7 +130,6 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             framePeak = juce::jmax(framePeak, std::abs(channelData[ch][i]));
 
         blockPeak = juce::jmax(blockPeak, framePeak);
-        envLin = dsp::envelopeStep(envLin, framePeak, envAttack, envRelease);
 
         if (detectHits)
         {
@@ -205,9 +202,25 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
         if (! profile.hitBased)
         {
-            const float envDb = dsp::gainToDb(envLin);
-            newOffset = envDb >= sensDb
-                            ? dsp::riderOffsetStep(offsetDb, envDb, trimDb, target, profile, dt)
+            // Sliding peak-hold: coarse 100 ms slots over the profile window.
+            const int numSlots = juce::jlimit(
+                1, dsp::kMaxHoldSlots, (int) (profile.holdS / dsp::kHoldSlotS));
+            holdSlots[holdSlotIndex % dsp::kMaxHoldSlots] =
+                juce::jmax(holdSlots[holdSlotIndex % dsp::kMaxHoldSlots], blockPeak);
+            holdSlotElapsed += dt;
+            while (holdSlotElapsed >= dsp::kHoldSlotS)
+            {
+                holdSlotElapsed -= dsp::kHoldSlotS;
+                holdSlotIndex = (holdSlotIndex + 1) % numSlots;
+                holdSlots[holdSlotIndex] = 0.0f;
+            }
+            float holdMax = blockPeak;
+            for (int i = 0; i < numSlots; ++i)
+                holdMax = juce::jmax(holdMax, holdSlots[i]);
+
+            const float levelDb = dsp::gainToDb(holdMax);
+            newOffset = levelDb >= sensDb
+                            ? dsp::riderOffsetStep(offsetDb, levelDb, trimDb, target, profile, dt)
                             : dsp::riderIdleStep(offsetDb, profile, dt);
         }
         else

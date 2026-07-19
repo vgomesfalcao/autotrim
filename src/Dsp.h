@@ -25,13 +25,15 @@ constexpr float kRiderToleranceDb = 1.0f;
 constexpr float kEnvAttackS = 0.005f;
 
 // Rider profiles per source type. Targets and measurement are peak-based, so
-// the continuous detector is a slow-release peak envelope (sits near the
-// recent peak level, consistent with the target) rather than plain RMS.
-// Drums are hit-based: continuous riding pumps between hits, so the level is
-// the average of the last few hit peaks (Drum Leveler-style).
+// the continuous detector is a sliding-window peak hold: it reads "the recent
+// peak" — the same quantity the measurement captured — and stays put between
+// syllables and short pauses, so the rider only moves on real level changes
+// (a release-envelope detector sawtooths on dynamic material and pumps in
+// gaps). Drums are hit-based: the level is the average of the last few hit
+// peaks (Drum Leveler-style).
 struct RiderProfile
 {
-    float envReleaseS;   // detector release (continuous profiles)
+    float holdS;         // sliding peak-hold window (continuous profiles)
     float upDbPerS;      // ride-up slew
     float downDbPerS;    // ride-down slew
     float rideRangeDb;   // offset confined to ± this around the measured trim
@@ -42,11 +44,16 @@ struct RiderProfile
 
 // Order must match the "profile" AudioParameterChoice: Voz, Instrumento, Bateria.
 inline constexpr RiderProfile kProfiles[3] = {
-    { 1.5f, 2.0f, 6.0f, 6.0f, -45.0f, 2.0f, false }, // Voz
-    { 2.0f, 1.5f, 6.0f, 4.0f, -50.0f, 1.0f, false }, // Instrumento
+    { 2.5f, 2.0f, 6.0f, 6.0f, -45.0f, 2.0f, false }, // Voz
+    { 3.0f, 1.5f, 6.0f, 4.0f, -50.0f, 1.0f, false }, // Instrumento
     { 0.0f, 1.5f, 4.0f, 4.0f, -40.0f, 0.5f, true },  // Bateria
 };
 constexpr int kNumProfiles = 3;
+
+// Sliding peak-hold implementation: coarse 100 ms slots, enough for the
+// longest profile window.
+constexpr float kHoldSlotS = 0.1f;
+constexpr int kMaxHoldSlots = 40;
 
 inline const RiderProfile& profileFor(int index)
 {

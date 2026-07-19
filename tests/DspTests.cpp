@@ -95,9 +95,9 @@ int main()
     CHECK(! voice.hitBased && ! instrument.hitBased);
     CHECK(approx(riderOffsetStep(0.0f, -20.0f, 0.0f, -6.0f, drums, 10.0f), drums.rideRangeDb));
 
-    // Envelope attacks faster than it releases (voice-profile release)
+    // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
-    const float r = onepoleCoef(kProfiles[0].envReleaseS, 48000.0f);
+    const float r = onepoleCoef(0.300f, 48000.0f);
     float env = envelopeStep(0.0f, 1.0f, a, r);
     const float attacked = env;
     env = envelopeStep(env, 0.0f, a, r);

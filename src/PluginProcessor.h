@@ -44,10 +44,10 @@ public:
 private:
     float gainLin = 1.0f;
     float gainCoef = 0.001f;
-    float envLin = 0.0f;
-    float envAttack = 0.5f;
-    // Detector release depends on the rider profile (index-matched).
-    float envReleaseCoefs[3] = { 0.001f, 0.001f, 0.001f };
+    // Sliding peak-hold detector for the continuous rider profiles.
+    float holdSlots[40] = {};
+    int holdSlotIndex = 0;
+    float holdSlotElapsed = 0.0f;
     // Local measurement accumulator; reset when measEpoch changes so the
     // panel's reset can never race the audio thread.
     float measPeak = 0.0f;

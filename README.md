@@ -13,8 +13,8 @@ Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o
 
 | Perfil | Detector | Sobe / Desce | Ride | Sensibilidade padrão | Retorno em pausa |
 |---|---|---|---|---|---|
-| **Voz** | envelope de pico, release 1.5 s | 2 / 6 dB/s | ±6 dB | -45 dBFS | 2 dB/s |
-| **Instrumento** | envelope de pico, release 2 s | 1.5 / 6 dB/s | ±4 dB | -50 dBFS | 1 dB/s |
+| **Voz** | pico com hold deslizante de 2.5 s | 2 / 6 dB/s | ±6 dB | -45 dBFS | 2 dB/s |
+| **Instrumento** | pico com hold deslizante de 3 s | 1.5 / 6 dB/s | ±4 dB | -50 dBFS | 1 dB/s |
 | **Bateria** | média dos picos das últimas 8 batidas (janela 50 ms, retrigger 100 ms) | 1.5 / 4 dB/s | ±4 dB | -40 dBFS | 0.5 dB/s |
 
   - O ride é um **offset limitado em volta do trim medido** (não mexe no parâmetro Trim) — segurança contra o ganho fugir do calibrado.
