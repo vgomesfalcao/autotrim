@@ -55,6 +55,15 @@ namespace
 } // namespace
 
 //==============================================================================
+namespace
+{
+    // Nonlinear meter scale anchored on the target.
+    constexpr float kMeterFloorDb = -60.0f;
+    constexpr float kMeterKneeDb = 12.0f;  // fine-zoom span below the target
+    constexpr float kMeterKneeFrac = 0.25f;
+    constexpr float kMeterTargetFrac = 0.70f;
+} // namespace
+
 void MeterBar::setLevelLin(float newLevelLin)
 {
     const float newDb = dsp::gainToDb(newLevelLin);
@@ -65,21 +74,52 @@ void MeterBar::setLevelLin(float newLevelLin)
     }
 }
 
+void MeterBar::setTargetDb(float newTargetDb)
+{
+    if (std::abs(newTargetDb - targetDb) > 0.05f)
+    {
+        targetDb = newTargetDb;
+        repaint();
+    }
+}
+
+float MeterBar::mapDbToFrac(float db) const
+{
+    const float t = juce::jlimit(kMeterFloorDb + 4.0f, -1.0f, targetDb);
+    const float knee = juce::jmax(t - kMeterKneeDb, kMeterFloorDb + 2.0f);
+    if (db <= kMeterFloorDb)
+        return 0.0f;
+    if (db <= knee)
+        return kMeterKneeFrac * (db - kMeterFloorDb) / (knee - kMeterFloorDb);
+    if (db <= t)
+        return kMeterKneeFrac + (kMeterTargetFrac - kMeterKneeFrac) * (db - knee) / (t - knee);
+    if (db >= 0.0f)
+        return 1.0f;
+    return kMeterTargetFrac + (1.0f - kMeterTargetFrac) * (db - t) / (0.0f - t);
+}
+
 void MeterBar::paint(juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
     g.setColour(colours::cardOutline);
     g.fillRoundedRectangle(r, 4.0f);
 
-    const float frac = juce::jlimit(0.0f, 1.0f, (levelDb + 60.0f) / 60.0f);
+    const float frac = juce::jlimit(0.0f, 1.0f, mapDbToFrac(levelDb));
     if (frac > 0.001f)
     {
+        // Teal up to the target mark, then amber into red past it.
         juce::ColourGradient gradient(colours::meterLow, r.getX(), 0.0f,
                                       colours::meterHigh, r.getRight(), 0.0f, false);
-        gradient.addColour(0.75, colours::warning);
+        gradient.addColour(kMeterTargetFrac, colours::meterLow);
+        gradient.addColour(juce::jmin(kMeterTargetFrac + 0.12, 0.99), colours::warning);
         g.setGradientFill(gradient);
         g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
     }
+
+    // Target mark
+    const float tickX = r.getX() + r.getWidth() * kMeterTargetFrac;
+    g.setColour(colours::text.withAlpha(0.85f));
+    g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
 
     g.setColour(colours::text);
     g.setFont(juce::Font(juce::FontOptions(11.0f)));
@@ -231,13 +271,16 @@ void ChannelView::paint(juce::Graphics& g)
 
 void ChannelView::refresh()
 {
-    meter.setLevelLin(proc.shared->peakPreTrim.load());
-    outMeter.setLevelLin(proc.shared->peakPostTrim.load());
-
     // The big readout mirrors the fader; the rider's live correction is shown
     // separately so the two never disagree.
     const float trim = proc.shared->trimDb->load();
     const float riderOffset = proc.shared->riderOffsetDb.load();
+    const float target = proc.shared->targetDb->load();
+
+    meter.setLevelLin(proc.shared->peakPreTrim.load());
+    meter.setTargetDb(target - (trim + riderOffset)); // where the input should sit
+    outMeter.setLevelLin(proc.shared->peakPostTrim.load());
+    outMeter.setTargetDb(target);
     trimValue.setText(formatDb(trim), juce::dontSendNotification);
 
     if (proc.shared->measuring.load())
@@ -313,10 +356,13 @@ void PanelRow::paint(juce::Graphics& g)
 void PanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    const float trim = shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f;
+    const float target = shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f;
     meter.setLevelLin(shared->peakPreTrim.load());
+    meter.setTargetDb(target - (trim + shared->riderOffsetDb.load()));
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    trimLabel.setText(formatDb(shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f),
-                      juce::dontSendNotification);
+    outMeter.setTargetDb(target);
+    trimLabel.setText(formatDb(trim), juce::dontSendNotification);
 
     const bool automationOn = shared->isAutomationOn();
     automationToggle.setToggleState(automationOn, juce::dontSendNotification);
@@ -350,6 +396,117 @@ void PanelRow::refresh()
 }
 
 //==============================================================================
+namespace
+{
+    constexpr int kMiniWidth = 320;
+    constexpr int kMiniRowHeight = 26;
+    constexpr int kMiniHeaderHeight = 92;
+} // namespace
+
+MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
+{
+    nameLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    nameLabel.setColour(juce::Label::textColourId, colours::text);
+    addAndMakeVisible(nameLabel);
+    addAndMakeVisible(outMeter);
+}
+
+void MiniPanelRow::resized()
+{
+    auto r = getLocalBounds().reduced(2);
+    nameLabel.setBounds(r.removeFromLeft(88));
+    outMeter.setBounds(r.reduced(0, 4));
+}
+
+void MiniPanelRow::refresh()
+{
+    nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    outMeter.setLevelLin(shared->peakPostTrim.load());
+    outMeter.setTargetDb(shared->targetDb != nullptr ? shared->targetDb->load() : -18.0f);
+}
+
+MiniPanelView::MiniPanelView(AutoTrimProcessor& processor) : proc(processor)
+{
+    measureButton.onClick = [] { measurement::start(registry::measDurationS.load()); };
+
+    expandButton.setButtonText(utf8("⤢"));
+    expandButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+    expandButton.setColour(juce::TextButton::textColourOffId, colours::text);
+    expandButton.onClick = [this] { proc.shared->panelCompact.store(false); };
+
+    viewport.setViewedComponent(&rowContainer, false);
+    viewport.setScrollBarsShown(true, false);
+
+    for (auto* c : std::initializer_list<juce::Component*> {
+             &measureButton, &expandButton, &progressBar, &viewport })
+        addAndMakeVisible(c);
+    progressBar.setVisible(false);
+}
+
+void MiniPanelView::resized()
+{
+    auto r = getLocalBounds().reduced(10);
+    auto top = r.removeFromTop(30);
+    expandButton.setBounds(top.removeFromRight(30));
+    top.removeFromRight(6);
+    measureButton.setBounds(top);
+    progressBar.setBounds(top);
+    r.removeFromTop(8);
+    viewport.setBounds(r);
+    layoutRows();
+}
+
+void MiniPanelView::refresh()
+{
+    measurement::poll();
+    const bool running = measurement::isRunning();
+    progressValue = running ? (double) measurement::progress() : 0.0;
+    measureButton.setVisible(! running);
+    progressBar.setVisible(running);
+
+    rebuildRowsIfNeeded();
+    for (auto& row : rows)
+        row->refresh();
+}
+
+int MiniPanelView::desiredHeight() const
+{
+    const int content = kMiniHeaderHeight + (int) registry::channels().size() * kMiniRowHeight;
+    return juce::jlimit(140, 640, content);
+}
+
+void MiniPanelView::rebuildRowsIfNeeded()
+{
+    auto channels = registry::channels();
+    const bool changed = channels.size() != rows.size()
+                         || ! std::equal(channels.begin(), channels.end(), rows.begin(),
+                                         [](const auto& ch, const auto& row)
+                                         { return ch == row->shared; });
+    if (! changed)
+        return;
+
+    rows.clear();
+    for (auto& ch : channels)
+    {
+        rows.push_back(std::make_unique<MiniPanelRow>(ch));
+        rowContainer.addAndMakeVisible(*rows.back());
+    }
+    layoutRows();
+}
+
+void MiniPanelView::layoutRows()
+{
+    const int width = juce::jmax(0, viewport.getWidth() - viewport.getScrollBarThickness());
+    rowContainer.setSize(width, (int) rows.size() * kMiniRowHeight);
+    int y = 0;
+    for (auto& row : rows)
+    {
+        row->setBounds(0, y, width, kMiniRowHeight);
+        y += kMiniRowHeight;
+    }
+}
+
+//==============================================================================
 PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 {
     styleTitle(title, utf8("AutoTrim — Painel de Controle"));
@@ -378,6 +535,10 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     cancelButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
     cancelButton.setColour(juce::TextButton::textColourOffId, colours::text);
 
+    compactButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+    compactButton.setColour(juce::TextButton::textColourOffId, colours::text);
+    compactButton.onClick = [this] { proc.shared->panelCompact.store(true); };
+
     panelToggle.setToggleState(true, juce::dontSendNotification);
     panelToggle.onClick = [this]
     {
@@ -390,7 +551,8 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &durationCaption, &maxTrimCaption, &durationSlider, &maxTrimSlider,
-             &measureButton, &cancelButton, &progressBar, &viewport, &emptyLabel, &panelToggle })
+             &measureButton, &cancelButton, &progressBar, &viewport, &emptyLabel, &panelToggle,
+             &compactButton })
         addAndMakeVisible(c);
     progressBar.setVisible(false);
     cancelButton.setVisible(false);
@@ -417,7 +579,9 @@ void PanelView::resized()
     progressBar.setBounds(actionRow.withTrimmedRight(8));
     r.removeFromTop(14);
 
-    panelToggle.setBounds(r.removeFromBottom(28));
+    auto bottomRow = r.removeFromBottom(28);
+    compactButton.setBounds(bottomRow.removeFromRight(140));
+    panelToggle.setBounds(bottomRow);
     r.removeFromBottom(8);
 
     viewport.setBounds(r);
@@ -499,27 +663,62 @@ void AutoTrimEditor::resized()
         view->setBounds(getLocalBounds());
 }
 
+AutoTrimEditor::ViewMode AutoTrimEditor::currentMode() const
+{
+    if (! proc.shared->panelMode.load())
+        return ViewMode::channel;
+    return proc.shared->panelCompact.load() ? ViewMode::mini : ViewMode::panel;
+}
+
 void AutoTrimEditor::timerCallback()
 {
-    if (proc.shared->panelMode.load() != viewIsPanel)
+    if (currentMode() != viewMode)
         rebuildView();
 
-    if (viewIsPanel)
-        static_cast<PanelView*>(view.get())->refresh();
-    else
-        static_cast<ChannelView*>(view.get())->refresh();
+    switch (viewMode)
+    {
+        case ViewMode::panel:
+            static_cast<PanelView*>(view.get())->refresh();
+            break;
+        case ViewMode::mini:
+        {
+            auto* mini = static_cast<MiniPanelView*>(view.get());
+            mini->refresh();
+            // Follow the channel count so the window stays exactly as tall as
+            // the list needs.
+            if (getHeight() != mini->desiredHeight())
+                setSize(kMiniWidth, mini->desiredHeight());
+            break;
+        }
+        case ViewMode::channel:
+            static_cast<ChannelView*>(view.get())->refresh();
+            break;
+    }
 }
 
 void AutoTrimEditor::rebuildView()
 {
-    viewIsPanel = proc.shared->panelMode.load();
-    if (viewIsPanel)
-        view = std::make_unique<PanelView>(proc);
-    else
-        view = std::make_unique<ChannelView>(proc);
+    viewMode = currentMode();
+    switch (viewMode)
+    {
+        case ViewMode::panel:
+            view = std::make_unique<PanelView>(proc);
+            setSize(kPanelWidth, kPanelHeight);
+            break;
+        case ViewMode::mini:
+        {
+            auto mini = std::make_unique<MiniPanelView>(proc);
+            const int h = mini->desiredHeight();
+            view = std::move(mini);
+            setSize(kMiniWidth, h);
+            break;
+        }
+        case ViewMode::channel:
+            view = std::make_unique<ChannelView>(proc);
+            setSize(kChannelWidth, kChannelHeight);
+            break;
+    }
     addAndMakeVisible(*view);
-    setSize(viewIsPanel ? kPanelWidth : kChannelWidth,
-            viewIsPanel ? kPanelHeight : kChannelHeight);
     resized();
 }
 } // namespace autotrim

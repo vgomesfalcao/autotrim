@@ -7,15 +7,22 @@
 
 namespace autotrim
 {
-// Horizontal peak meter on a -60..0 dBFS scale with a dB readout.
+// Horizontal peak meter with a target-anchored nonlinear scale: the target
+// mark sits at ~70% of the width, the 12 dB below it get the most pixels
+// (that's where the action is), everything far below is compressed into the
+// first quarter, and whatever exceeds the target runs to the right edge.
 class MeterBar : public juce::Component
 {
 public:
     void setLevelLin(float newLevelLin);
+    void setTargetDb(float newTargetDb);
     void paint(juce::Graphics& g) override;
 
 private:
+    float mapDbToFrac(float db) const;
+
     float levelDb = -200.0f;
+    float targetDb = -18.0f;
 };
 
 // Per-channel view: name, meter, target, trim readout and toggles.
@@ -65,6 +72,44 @@ private:
     juce::ToggleButton automationToggle;
 };
 
+// Compact-panel row: name + post-trim meter with target mark, nothing else.
+class MiniPanelRow : public juce::Component
+{
+public:
+    explicit MiniPanelRow(std::shared_ptr<ChannelShared> channel);
+    void resized() override;
+    void refresh();
+
+    std::shared_ptr<ChannelShared> shared;
+
+private:
+    juce::Label nameLabel;
+    MeterBar outMeter;
+};
+
+// Minimal panel for piloting the live show: measure button + one meter per
+// channel in a small always-glanceable window.
+class MiniPanelView : public juce::Component
+{
+public:
+    explicit MiniPanelView(AutoTrimProcessor& processor);
+    void resized() override;
+    void refresh();
+    int desiredHeight() const;
+
+private:
+    void rebuildRowsIfNeeded();
+    void layoutRows();
+
+    AutoTrimProcessor& proc;
+    juce::TextButton measureButton { "Medir" }, expandButton;
+    double progressValue = 0.0;
+    juce::ProgressBar progressBar { progressValue };
+    juce::Viewport viewport;
+    juce::Component rowContainer;
+    std::vector<std::unique_ptr<MiniPanelRow>> rows;
+};
+
 // Panel view: global settings, mass measurement, live channel list.
 class PanelView : public juce::Component
 {
@@ -81,6 +126,7 @@ private:
     juce::Slider durationSlider, maxTrimSlider;
     juce::TextButton measureButton { "Medir e regular todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };
+    juce::TextButton compactButton { "Modo compacto" };
     double progressValue = 0.0;
     juce::ProgressBar progressBar { progressValue };
     juce::Viewport viewport;
@@ -102,13 +148,16 @@ public:
     void resized() override;
 
 private:
+    enum class ViewMode { channel, panel, mini };
+
     void timerCallback() override;
     void rebuildView();
+    ViewMode currentMode() const;
 
     AutoTrimProcessor& proc;
     AutoTrimLookAndFeel lookAndFeel;
     std::unique_ptr<juce::Component> view;
-    bool viewIsPanel = false;
+    ViewMode viewMode = ViewMode::channel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutoTrimEditor)
 };

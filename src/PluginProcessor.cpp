@@ -250,6 +250,7 @@ void AutoTrimProcessor::getStateInformation(juce::MemoryBlock& destData)
         state.setProperty("channelName", shared->name, nullptr);
     }
     state.setProperty("panelMode", shared->panelMode.load(), nullptr);
+    state.setProperty("panelCompact", shared->panelCompact.load(), nullptr);
     // Global panel settings ride along with every instance, but only a panel
     // instance restores them, so a channel's stale copy never wins.
     state.setProperty("maxTrimDb", registry::maxTrimDb.load(), nullptr);
@@ -272,6 +273,7 @@ void AutoTrimProcessor::setStateInformation(const void* data, int sizeInBytes)
     }
     const bool panelMode = (bool) state.getProperty("panelMode", false);
     shared->panelMode.store(panelMode);
+    shared->panelCompact.store((bool) state.getProperty("panelCompact", false));
     if (panelMode)
     {
         registry::maxTrimDb.store((float) (double) state.getProperty(

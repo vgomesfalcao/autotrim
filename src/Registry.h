@@ -35,6 +35,7 @@ struct ChannelShared
     std::atomic<float> measuredPeak { 0.0f };  // linear, max during measurement
     std::atomic<float> riderOffsetDb { 0.0f }; // continuous-mode correction
     std::atomic<bool> panelMode { false };
+    std::atomic<bool> panelCompact { false };
     std::atomic<bool> measuring { false };
     std::atomic<bool> noSignal { false };
     std::atomic<bool> alive { true };
