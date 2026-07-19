@@ -11,11 +11,11 @@ namespace autotrim::dsp
 // the rider freezes.
 constexpr float kGateDb = -60.0f;
 constexpr float kDefaultTargetDb = -10.0f;
-constexpr float kDefaultMaxTrimDb = 24.0f;
+constexpr float kDefaultMaxTrimDb = 36.0f;
 constexpr float kDefaultMeasDurationS = 10.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
-// within this range.
-constexpr float kTrimParamRangeDb = 48.0f;
+// within this range. Weak sources can need +40 dB or more of make-up.
+constexpr float kTrimParamRangeDb = 60.0f;
 
 // Deadband around the target: within this window the rider holds still. The
 // peak envelope reads slightly under the true peak the measurement used, so
