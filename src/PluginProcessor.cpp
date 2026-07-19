@@ -219,7 +219,10 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 holdMax = juce::jmax(holdMax, holdSlots[i]);
 
             const float levelDb = dsp::gainToDb(holdMax);
-            newOffset = levelDb >= sensDb
+            const bool hasProgram =
+                levelDb >= sensDb
+                && dsp::riderSeesProgram(levelDb, trimDb, offsetDb, target, profile);
+            newOffset = hasProgram
                             ? dsp::riderOffsetStep(offsetDb, levelDb, trimDb, target, profile, dt)
                             : dsp::riderIdleStep(offsetDb, profile, dt);
         }

@@ -110,6 +110,19 @@ inline float riderOffsetStep(float offsetDb, float levelDb, float baseTrimDb, fl
     return std::clamp(offsetDb + step, -profile.rideRangeDb, profile.rideRangeDb);
 }
 
+// Program-presence window: the rider may only ride *up* while the level is
+// near where the program should sit (target − trim − offset). Anything
+// further below is a pause or stage bleed — riding it up would boost noise to
+// the range limit (absolute sensitivity alone cannot catch bleed above it).
+constexpr float kRiderPauseMarginDb = 3.0f;
+
+inline bool riderSeesProgram(float levelDb, float baseTrimDb, float offsetDb, float targetDb,
+                             const RiderProfile& profile)
+{
+    const float error = targetDb - (levelDb + baseTrimDb + offsetDb);
+    return error <= profile.rideRangeDb + kRiderPauseMarginDb;
+}
+
 // Below the sensitivity threshold the rider glides the offset back toward the
 // measured trim instead of chasing noise or bleed.
 inline float riderIdleStep(float offsetDb, const RiderProfile& profile, float dt)

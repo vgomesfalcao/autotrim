@@ -84,6 +84,14 @@ int main()
     // Just outside it, correction happens but stops at the deadband edge.
     CHECK(approx(riderOffsetStep(0.0f, -36.5f, 16.0f, -18.0f, voice, 1.0f), 1.5f));
 
+    // Program-presence window: with target -10 and trim +16 the program input
+    // sits at -26. Levels near it count as program; a level 14 dB below
+    // (bleed/pause above the sensitivity floor) must NOT be ridden up.
+    CHECK(riderSeesProgram(-26.0f, 16.0f, 0.0f, -10.0f, voice));
+    CHECK(riderSeesProgram(-33.0f, 16.0f, 0.0f, -10.0f, voice)); // 7 dB under: still program
+    CHECK(! riderSeesProgram(-40.0f, 16.0f, 0.0f, -10.0f, voice)); // 14 dB under: pause
+    CHECK(! riderSeesProgram(-45.0f, 16.0f, 6.0f, -10.0f, voice)); // deep bleed with offset
+
     // Idle glide returns the offset to the measured trim at the profile's
     // return rate, without overshooting zero.
     CHECK(approx(riderIdleStep(3.0f, voice, 1.0f), 3.0f - voice.returnDbPerS));
