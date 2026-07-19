@@ -237,6 +237,14 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
 }
 
+void AutoTrimProcessor::updateTrackProperties(const TrackProperties& properties)
+{
+    if (! properties.name.has_value())
+        return;
+    const juce::ScopedLock lock(shared->nameLock);
+    shared->hostName = *properties.name;
+}
+
 juce::AudioProcessorEditor* AutoTrimProcessor::createEditor()
 {
     return new AutoTrimEditor(*this);

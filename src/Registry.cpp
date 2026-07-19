@@ -7,7 +7,11 @@ namespace autotrim
 juce::String ChannelShared::displayName() const
 {
     const juce::ScopedLock lock(nameLock);
-    return name.trim().isEmpty() ? "Canal " + juce::String(id) : name;
+    if (! name.trim().isEmpty())
+        return name;
+    if (! hostName.trim().isEmpty())
+        return hostName;
+    return "Canal " + juce::String(id);
 }
 
 namespace registry

@@ -36,6 +36,7 @@ public:
 
 private:
     AutoTrimProcessor& proc;
+    juce::String lastPlaceholder;
 
     juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption;
     juce::TextEditor nameEditor;

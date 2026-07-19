@@ -28,7 +28,8 @@ struct ChannelShared
     uint64_t id = 0;
 
     juce::CriticalSection nameLock;
-    juce::String name; // guarded by nameLock, message/state threads only
+    juce::String name;     // user-set; guarded by nameLock, message/state threads only
+    juce::String hostName; // provided by the host (VST3 only; AU has no such API)
 
     std::atomic<float> peakPreTrim { 0.0f };   // linear, decaying meter value
     std::atomic<float> peakPostTrim { 0.0f };  // linear, decaying, after trim

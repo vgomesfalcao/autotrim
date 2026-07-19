@@ -277,6 +277,22 @@ void ChannelView::refresh()
     const float riderOffset = proc.shared->riderOffsetDb.load();
     const float target = proc.shared->targetDb->load();
 
+    // When the host provides a track name (VST3), surface it as the
+    // placeholder so an unnamed channel still shows something meaningful.
+    juce::String host;
+    {
+        const juce::ScopedLock lock(proc.shared->nameLock);
+        host = proc.shared->hostName;
+    }
+    const auto placeholder =
+        host.trim().isEmpty() ? utf8("ex.: Vozes") : host + utf8(" (nome da track)");
+    if (placeholder != lastPlaceholder)
+    {
+        lastPlaceholder = placeholder;
+        nameEditor.setTextToShowWhenEmpty(placeholder, colours::subtext);
+        nameEditor.repaint();
+    }
+
     meter.setLevelLin(proc.shared->peakPreTrim.load());
     meter.setTargetDb(target - (trim + riderOffset)); // where the input should sit
     outMeter.setLevelLin(proc.shared->peakPostTrim.load());

@@ -35,6 +35,9 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // Track name pushed by the host (VST3 hosts only; Logic/AU has no such API).
+    void updateTrackProperties(const TrackProperties& properties) override;
+
     juce::AudioProcessorValueTreeState apvts;
     std::shared_ptr<ChannelShared> shared;
 
