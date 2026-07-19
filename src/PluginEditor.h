@@ -134,7 +134,7 @@ private:
     void layoutRows();
 
     AutoTrimProcessor& proc;
-    juce::TextButton measureButton { "Medir" }, expandButton;
+    juce::TextButton measureButton { "Regular ganhos" }, expandButton;
     double progressValue = 0.0;
     juce::ProgressBar progressBar { progressValue };
     juce::Viewport viewport;
@@ -156,7 +156,7 @@ private:
 
     juce::Label title, durationCaption, maxTrimCaption, listHeader, emptyLabel;
     juce::Slider durationSlider, maxTrimSlider;
-    juce::TextButton measureButton { "Medir e regular todos os canais" };
+    juce::TextButton measureButton { "Regular ganhos de todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };
     juce::TextButton compactButton { "Modo compacto" };
     double progressValue = 0.0;
