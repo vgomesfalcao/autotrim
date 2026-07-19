@@ -9,7 +9,6 @@ namespace autotrim
 namespace
 {
     constexpr int kChannelWidth = 440;
-    constexpr int kChannelHeight = 484;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 580;
     constexpr int kRowHeight = 46;
@@ -245,6 +244,21 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     statusLabel.setJustificationType(juce::Justification::centred);
 
+    advancedButton.setButtonText(utf8("▸  Avançado"));
+    advancedButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    advancedButton.setColour(juce::TextButton::textColourOffId, colours::subtext);
+    advancedButton.onClick = [this]
+    {
+        advancedOpen = ! advancedOpen;
+        advancedButton.setButtonText(advancedOpen ? utf8("▾  Avançado") : utf8("▸  Avançado"));
+        for (auto* c : { (juce::Component*) &trimCaption, (juce::Component*) &trimSlider,
+                         (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
+            c->setVisible(advancedOpen);
+        resized();
+        repaint();
+        // The editor's timer follows desiredHeight() and resizes the window.
+    };
+
     panelToggle.onClick = [this]
     {
         if (panelToggle.getToggleState())
@@ -255,8 +269,14 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusLabel, &sectionLabel,
-             &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle })
+             &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle,
+             &advancedButton })
         addAndMakeVisible(c);
+
+    // "Avançado" starts collapsed.
+    for (auto* c : { (juce::Component*) &trimCaption, (juce::Component*) &trimSlider,
+                     (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
+        c->setVisible(false);
 }
 
 void ChannelView::resized()
@@ -287,8 +307,8 @@ void ChannelView::resized()
     statusLabel.setBounds(r.removeFromTop(20));
     r.removeFromTop(12);
 
-    // Set-once configuration card
-    configCard = r.removeFromTop(206);
+    // Set-once configuration card ("Avançado" adds a collapsed row)
+    configCard = r.removeFromTop(advancedOpen ? 222 : 190);
     auto card = configCard.reduced(14, 12);
     sectionLabel.setBounds(card.removeFromTop(16));
     card.removeFromTop(10);
@@ -303,16 +323,28 @@ void ChannelView::resized()
     rightCol.removeFromTop(8);
     automationToggle.setBounds(rightCol.removeFromTop(26));
     riderToggle.setBounds(rightCol.removeFromTop(26));
-    card.removeFromTop(10);
+    card.removeFromTop(8);
 
-    auto compactRow = card.removeFromTop(24);
-    trimCaption.setBounds(compactRow.removeFromLeft(36));
-    trimSlider.setBounds(compactRow.removeFromLeft(96));
-    compactRow.removeFromLeft(20);
-    sensCaption.setBounds(compactRow.removeFromLeft(92));
-    sensSlider.setBounds(compactRow.removeFromLeft(96));
+    advancedButton.setBounds(card.removeFromTop(20).removeFromLeft(120));
+    if (advancedOpen)
+    {
+        card.removeFromTop(8);
+        auto compactRow = card.removeFromTop(24);
+        trimCaption.setBounds(compactRow.removeFromLeft(36));
+        trimSlider.setBounds(compactRow.removeFromLeft(96));
+        compactRow.removeFromLeft(20);
+        sensCaption.setBounds(compactRow.removeFromLeft(92));
+        sensSlider.setBounds(compactRow.removeFromLeft(96));
+    }
 
     panelToggle.setBounds(r.removeFromBottom(28));
+}
+
+int ChannelView::desiredHeight() const
+{
+    // Fixed sections (title, name row, meters, status, gaps, panel toggle,
+    // margins) plus the config card, whose height follows the disclosure.
+    return 278 + (advancedOpen ? 222 : 190);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -771,8 +803,13 @@ void AutoTrimEditor::timerCallback()
             break;
         }
         case ViewMode::channel:
-            static_cast<ChannelView*>(view.get())->refresh();
+        {
+            auto* channel = static_cast<ChannelView*>(view.get());
+            channel->refresh();
+            if (getHeight() != channel->desiredHeight())
+                setSize(kChannelWidth, channel->desiredHeight());
             break;
+        }
     }
 }
 
@@ -794,9 +831,13 @@ void AutoTrimEditor::rebuildView()
             break;
         }
         case ViewMode::channel:
-            view = std::make_unique<ChannelView>(proc);
-            setSize(kChannelWidth, kChannelHeight);
+        {
+            auto channel = std::make_unique<ChannelView>(proc);
+            const int h = channel->desiredHeight();
+            view = std::move(channel);
+            setSize(kChannelWidth, h);
             break;
+        }
     }
     addAndMakeVisible(*view);
     resized();

@@ -41,11 +41,14 @@ public:
     void resized() override;
     void paint(juce::Graphics& g) override;
     void refresh();
+    int desiredHeight() const;
 
 private:
     AutoTrimProcessor& proc;
     juce::String lastPlaceholder;
     juce::Rectangle<int> configCard;
+    bool advancedOpen = false; // "Avançado" disclosure, closed by default
+    juce::TextButton advancedButton;
 
     juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption, sectionLabel;
     juce::TextEditor nameEditor;
