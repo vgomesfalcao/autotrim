@@ -101,8 +101,11 @@ bool AutoTrimProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     const auto& in = layouts.getMainInputChannelSet();
     const auto& out = layouts.getMainOutputChannelSet();
-    return in == out
-           && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo());
+    const auto mono = juce::AudioChannelSet::mono();
+    const auto stereo = juce::AudioChannelSet::stereo();
+    // mono->mono, stereo->stereo, and Logic's beloved mono->stereo insert.
+    return (in == mono && (out == mono || out == stereo))
+           || (in == stereo && out == stereo);
 }
 
 void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -113,6 +116,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const int numChannels = buffer.getNumChannels();
     if (numSamples == 0)
         return;
+
+    // Mono-to-stereo layouts: duplicate the mono input into the extra output
+    // channels before processing.
+    for (int ch = getMainBusNumInputChannels(); ch < numChannels; ++ch)
+        buffer.copyFrom(ch, 0, buffer, 0, 0, numSamples);
 
     const float maxTrim = registry::maxTrimDb.load();
     const bool automationOn = shared->isAutomationOn();
