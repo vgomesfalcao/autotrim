@@ -1,0 +1,67 @@
+// Dark, flat look shared by both views.
+#pragma once
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+namespace autotrim
+{
+namespace colours
+{
+    const juce::Colour background { 0xff131720 };
+    const juce::Colour card { 0xff1b212c };
+    const juce::Colour cardOutline { 0xff2a3140 };
+    const juce::Colour accent { 0xff43c6ac };
+    const juce::Colour text { 0xffe6eaf0 };
+    const juce::Colour subtext { 0xff8a93a5 };
+    const juce::Colour warning { 0xffe5b84b };
+    const juce::Colour info { 0xff5aa7e8 };
+    const juce::Colour meterLow { 0xff43c6ac };
+    const juce::Colour meterHigh { 0xffe0564f };
+} // namespace colours
+
+class AutoTrimLookAndFeel : public juce::LookAndFeel_V4
+{
+public:
+    AutoTrimLookAndFeel()
+    {
+        auto scheme = getDarkColourScheme();
+        scheme.setUIColour(juce::LookAndFeel_V4::ColourScheme::windowBackground, colours::background);
+        scheme.setUIColour(juce::LookAndFeel_V4::ColourScheme::widgetBackground, colours::card);
+        scheme.setUIColour(juce::LookAndFeel_V4::ColourScheme::defaultText, colours::text);
+        scheme.setUIColour(juce::LookAndFeel_V4::ColourScheme::highlightedFill, colours::accent);
+        setColourScheme(scheme);
+
+        setColour(juce::Slider::thumbColourId, colours::accent);
+        setColour(juce::Slider::trackColourId, colours::accent.withAlpha(0.6f));
+        setColour(juce::Slider::backgroundColourId, colours::cardOutline);
+        setColour(juce::Slider::textBoxTextColourId, colours::text);
+        setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        setColour(juce::Label::textColourId, colours::text);
+        setColour(juce::ToggleButton::textColourId, colours::text);
+        setColour(juce::ToggleButton::tickColourId, colours::accent);
+        setColour(juce::ToggleButton::tickDisabledColourId, colours::subtext);
+        setColour(juce::TextButton::buttonColourId, colours::accent);
+        setColour(juce::TextButton::textColourOffId, juce::Colour(0xff0e1218));
+        setColour(juce::TextEditor::backgroundColourId, colours::card);
+        setColour(juce::TextEditor::textColourId, colours::text);
+        setColour(juce::TextEditor::outlineColourId, colours::cardOutline);
+        setColour(juce::TextEditor::focusedOutlineColourId, colours::accent);
+        setColour(juce::ComboBox::backgroundColourId, colours::card);
+        setColour(juce::ComboBox::textColourId, colours::text);
+        setColour(juce::ComboBox::outlineColourId, colours::cardOutline);
+        setColour(juce::ComboBox::arrowColourId, colours::accent);
+        setColour(juce::PopupMenu::backgroundColourId, colours::card);
+        setColour(juce::PopupMenu::textColourId, colours::text);
+        setColour(juce::PopupMenu::highlightedBackgroundColourId, colours::accent.withAlpha(0.25f));
+        setColour(juce::PopupMenu::highlightedTextColourId, colours::text);
+        setColour(juce::ProgressBar::backgroundColourId, colours::cardOutline);
+        setColour(juce::ProgressBar::foregroundColourId, colours::info);
+        setColour(juce::ScrollBar::thumbColourId, colours::cardOutline.brighter(0.4f));
+    }
+
+    juce::Font getTextButtonFont(juce::TextButton&, int) override
+    {
+        return juce::Font(juce::FontOptions(15.0f, juce::Font::bold));
+    }
+};
+} // namespace autotrim

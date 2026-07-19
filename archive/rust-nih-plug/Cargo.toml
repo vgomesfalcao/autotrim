@@ -1,0 +1,23 @@
+[workspace]
+members = ["xtask"]
+
+[package]
+name = "autotrim"
+version = "0.1.0"
+edition = "2021"
+authors = ["vgomesfalcao <vgomesfalcao@gmail.com>"]
+license = "GPL-3.0-or-later"
+description = "Auto gain trim plugin with a central control panel"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+nih_plug_egui = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+atomic_float = "1"
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
