@@ -75,6 +75,7 @@ private:
     StatusStrip statusStrip;
     juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption;
     juce::Slider targetSlider, trimSlider, sensSlider;
+    juce::TextButton measureButton { "Regular ganho" };
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
         panelToggle { utf8("Usar esta instância como painel de controle") };

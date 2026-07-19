@@ -332,6 +332,14 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
+    measureButton.onClick = [this]
+    {
+        if (proc.shared->measuring.load())
+            measurement::cancel();
+        else if (! measurement::isRunning())
+            measurement::startChannel(proc.shared, registry::measDurationS.load());
+    };
+
     advancedButton.setButtonText(utf8("▸  Avançado"));
     advancedButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     advancedButton.setColour(juce::TextButton::textColourOffId, colours::subtext);
@@ -358,7 +366,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle,
-             &advancedButton })
+             &advancedButton, &measureButton })
         addAndMakeVisible(c);
 
     // "Avançado" starts collapsed.
@@ -387,6 +395,9 @@ void ChannelView::resized()
     auto inRow = r.removeFromTop(30);
     meterCaption.setBounds(inRow.removeFromLeft(72));
     meter.setBounds(inRow.reduced(0, 3));
+    r.removeFromTop(12);
+
+    measureButton.setBounds(r.removeFromTop(34));
     r.removeFromTop(14);
 
     // Set-once configuration card ("Avançado" adds a collapsed row)
@@ -434,7 +445,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 336 + (advancedOpen ? 278 : 242);
+    return 382 + (advancedOpen ? 278 : 242);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -448,6 +459,13 @@ void ChannelView::paint(juce::Graphics& g)
 
 void ChannelView::refresh()
 {
+    // Per-channel measurements are polled here too, so they finish even when
+    // no panel window is open.
+    measurement::poll();
+    measureButton.setButtonText(proc.shared->measuring.load() ? "Cancelar"
+                                                              : "Regular ganho");
+    measureButton.setEnabled(! measurement::isRunning() || proc.shared->measuring.load());
+
     // The big readout mirrors the fader; the rider's live correction is shown
     // separately so the two never disagree.
     const float trim = proc.shared->trimDb->load();

@@ -10,6 +10,18 @@ namespace
     bool running = false;
     double startMs = 0.0;
     double durationMs = 0.0;
+    // Non-null while measuring a single channel instead of all of them.
+    std::shared_ptr<ChannelShared> soloChannel;
+
+    void arm(ChannelShared& ch)
+    {
+        ch.measEpoch.fetch_add(1);
+        ch.measuredPeak.store(0.0f);
+        ch.noSignal.store(false);
+        ch.measuring.store(true);
+    }
+
+    void finishChannel(ChannelShared& ch, float maxTrim);
 
     void applyTrim(ChannelShared& ch, float trimDb)
     {
@@ -24,6 +36,20 @@ namespace
         ch.protectOffsetDb.store(0.0f);
         ch.protectionActive.store(false);
     }
+
+    // No-signal channels are flagged and left completely untouched.
+    void finishChannel(ChannelShared& ch, float maxTrim)
+    {
+        if (! ch.measuring.exchange(false))
+            return;
+        const float peakDb = dsp::gainToDb(ch.measuredPeak.load());
+        const float targetDb =
+            ch.targetDb != nullptr ? ch.targetDb->load() : dsp::kDefaultTargetDb;
+        if (auto trim = dsp::computeTrimDb(peakDb, targetDb, maxTrim))
+            applyTrim(ch, *trim);
+        else
+            ch.noSignal.store(true);
+    }
 } // namespace
 
 void start(float durationS)
@@ -34,11 +60,20 @@ void start(float durationS)
     {
         if (! ch->isAutomationOn())
             continue;
-        ch->measEpoch.fetch_add(1);
-        ch->measuredPeak.store(0.0f);
-        ch->noSignal.store(false);
-        ch->measuring.store(true);
+        arm(*ch);
     }
+    soloChannel = nullptr;
+    running = true;
+    startMs = juce::Time::getMillisecondCounterHiRes();
+    durationMs = juce::jmax(0.5f, durationS) * 1000.0;
+}
+
+void startChannel(const std::shared_ptr<ChannelShared>& channel, float durationS)
+{
+    if (running || channel == nullptr)
+        return;
+    arm(*channel);
+    soloChannel = channel;
     running = true;
     startMs = juce::Time::getMillisecondCounterHiRes();
     durationMs = juce::jmax(0.5f, durationS) * 1000.0;
@@ -49,8 +84,12 @@ void cancel()
     if (! running)
         return;
     running = false;
-    for (auto& ch : registry::channels())
-        ch->measuring.store(false);
+    if (soloChannel != nullptr)
+        soloChannel->measuring.store(false);
+    else
+        for (auto& ch : registry::channels())
+            ch->measuring.store(false);
+    soloChannel = nullptr;
 }
 
 void poll()
@@ -60,17 +99,14 @@ void poll()
     running = false;
 
     const float maxTrim = registry::maxTrimDb.load();
-    for (auto& ch : registry::channels())
+    if (soloChannel != nullptr)
     {
-        if (! ch->measuring.exchange(false))
-            continue;
-        const float peakDb = dsp::gainToDb(ch->measuredPeak.load());
-        const float targetDb = ch->targetDb != nullptr ? ch->targetDb->load() : dsp::kDefaultTargetDb;
-        if (auto trim = dsp::computeTrimDb(peakDb, targetDb, maxTrim))
-            applyTrim(*ch, *trim);
-        else
-            ch->noSignal.store(true);
+        finishChannel(*soloChannel, maxTrim);
+        soloChannel = nullptr;
+        return;
     }
+    for (auto& ch : registry::channels())
+        finishChannel(*ch, maxTrim);
 }
 
 bool isRunning() { return running; }
