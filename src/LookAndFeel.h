@@ -75,7 +75,9 @@ public:
         auto* label = LookAndFeel_V4::createSliderTextBox(slider);
         if (slider.getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
         {
-            label->setFont(juce::Font(juce::FontOptions(19.0f, juce::Font::bold)));
+            // The "hero" knob (Ganho) gets an even bigger readout.
+            const float size = slider.getName() == "hero" ? 26.0f : 19.0f;
+            label->setFont(juce::Font(juce::FontOptions(size, juce::Font::bold)));
             label->setColour(juce::Label::textColourId, colours::accent);
             label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
             label->setJustificationType(juce::Justification::centred);

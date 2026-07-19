@@ -299,7 +299,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(sensCaption, "Sensibilidade");
     styleSection(sectionLabel, utf8("Configuração inicial"));
     // Ganho is the day-to-day control: bigger, brighter caption on the knob.
-    trimCaption.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
+    trimCaption.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
     trimCaption.setColour(juce::Label::textColourId, colours::text);
     trimCaption.setJustificationType(juce::Justification::centred);
 
@@ -341,7 +341,9 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                                 dsp::profileFor(index).sensitivityDb);
     };
 
+    trimSlider.setName("hero");
     styleKnob(trimSlider, " dB", 0.0);
+    trimSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 130, 32);
     styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
 
@@ -403,16 +405,16 @@ void ChannelView::resized()
     r.removeFromTop(12);
 
     // Set-once configuration card ("Avançado" adds a collapsed row)
-    configCard = r.removeFromTop(advancedOpen ? 222 : 190);
+    configCard = r.removeFromTop(advancedOpen ? 252 : 220);
     auto card = configCard.reduced(14, 12);
     sectionLabel.setBounds(card.removeFromTop(16));
     card.removeFromTop(10);
 
-    auto knobRow = card.removeFromTop(112);
-    auto gainCol = knobRow.removeFromLeft(knobRow.getWidth() / 2);
-    trimCaption.setBounds(gainCol.removeFromTop(18));
+    auto knobRow = card.removeFromTop(142);
+    auto gainCol = knobRow.removeFromLeft(knobRow.getWidth() * 11 / 20);
+    trimCaption.setBounds(gainCol.removeFromTop(22));
     trimSlider.setBounds(gainCol);
-    auto rightCol = knobRow.withTrimmedLeft(10);
+    auto rightCol = knobRow.withTrimmedLeft(10).withTrimmedBottom(30);
     profileCaption.setBounds(rightCol.removeFromTop(16));
     profileBox.setBounds(rightCol.removeFromTop(28));
     rightCol.removeFromTop(8);
@@ -447,7 +449,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 304 + (advancedOpen ? 222 : 190);
+    return 304 + (advancedOpen ? 252 : 220);
 }
 
 void ChannelView::paint(juce::Graphics& g)
