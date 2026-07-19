@@ -400,7 +400,8 @@ namespace
 {
     constexpr int kMiniWidth = 320;
     constexpr int kMiniRowHeight = 26;
-    constexpr int kMiniHeaderHeight = 92;
+    // Margins (10+10) + button bar (30) + gap (8): everything except the rows.
+    constexpr int kMiniChromeHeight = 58;
 } // namespace
 
 MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
@@ -471,8 +472,8 @@ void MiniPanelView::refresh()
 
 int MiniPanelView::desiredHeight() const
 {
-    const int content = kMiniHeaderHeight + (int) registry::channels().size() * kMiniRowHeight;
-    return juce::jlimit(140, 640, content);
+    const int numRows = juce::jmax(1, (int) registry::channels().size());
+    return juce::jmin(640, kMiniChromeHeight + numRows * kMiniRowHeight);
 }
 
 void MiniPanelView::rebuildRowsIfNeeded()
