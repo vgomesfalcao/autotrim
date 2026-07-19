@@ -14,7 +14,7 @@ namespace
     constexpr int kRowHeight = 46;
     constexpr int kColName = 160;
     constexpr int kColPreset = 120;
-    constexpr int kColTrim = 90;
+    constexpr int kColTrim = 132;
     constexpr int kColAuto = 70;
     constexpr int kColStatus = 130;
 
@@ -537,9 +537,18 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
 {
     meter.setTickVisible(false); // input level needs no moving mark
     nameLabel.setFont(juce::Font(juce::FontOptions(16.0f)));
-    trimLabel.setFont(juce::Font(juce::FontOptions(15.0f, juce::Font::bold)));
-    trimLabel.setColour(juce::Label::textColourId, colours::accent);
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
+
+    // Manual gain knob for this channel, writing straight to its parameter.
+    trimKnob.setName("row");
+    trimKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    trimKnob.setTextBoxStyle(juce::Slider::TextBoxRight, false, 62, 18);
+    trimKnob.setRange(-dsp::kTrimParamRangeDb, dsp::kTrimParamRangeDb, 0.1);
+    trimKnob.setTextValueSuffix(" dB");
+    trimKnob.setMouseDragSensitivity(300);
+    trimKnob.setDoubleClickReturnValue(true, 0.0);
+    trimKnob.onValueChange = [this]
+    { presets::writeParam(shared->trimParam, (float) trimKnob.getValue()); };
 
     automationToggle.onClick = [this]
     { writeBoolParam(shared->automationParam, automationToggle.getToggleState()); };
@@ -557,7 +566,7 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
     styleRegButton(regButton, shared);
 
     for (auto* c : std::initializer_list<juce::Component*> {
-             &nameLabel, &meter, &outMeter, &regButton, &presetBox, &trimLabel,
+             &nameLabel, &meter, &outMeter, &regButton, &presetBox, &trimKnob,
              &automationToggle, &statusLabel })
         addAndMakeVisible(c);
 }
@@ -568,7 +577,7 @@ void PanelRow::resized()
     nameLabel.setBounds(r.removeFromLeft(kColName));
     statusLabel.setBounds(r.removeFromRight(kColStatus));
     automationToggle.setBounds(r.removeFromRight(kColAuto).withSizeKeepingCentre(24, 24));
-    trimLabel.setBounds(r.removeFromRight(kColTrim));
+    trimKnob.setBounds(r.removeFromRight(kColTrim).reduced(0, 2));
     presetBox.setBounds(r.removeFromRight(kColPreset).reduced(0, 8));
     auto meterArea = r.reduced(8, 5);
     regButton.setBounds(meterArea.removeFromRight(46).reduced(2, 5));
@@ -596,7 +605,9 @@ void PanelRow::refresh()
     outMeter.setLevelLin(shared->peakPostTrim.load());
     outMeter.setScaleAnchorDb(target);
     outMeter.setTickDb(target);
-    trimLabel.setText(formatDb(trim), juce::dontSendNotification);
+    // Don't fight the user's drag; otherwise mirror the parameter.
+    if (! trimKnob.isMouseButtonDown())
+        trimKnob.setValue(trim, juce::dontSendNotification);
 
     const bool automationOn = shared->isAutomationOn();
     automationToggle.setToggleState(automationOn, juce::dontSendNotification);

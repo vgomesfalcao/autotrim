@@ -99,9 +99,10 @@ public:
     std::shared_ptr<ChannelShared> shared;
 
 private:
-    juce::Label nameLabel, trimLabel, statusLabel;
+    juce::Label nameLabel, statusLabel;
     MeterBar meter, outMeter;
     juce::TextButton regButton;
+    juce::Slider trimKnob;
     juce::ComboBox presetBox;
     juce::ToggleButton automationToggle;
 };

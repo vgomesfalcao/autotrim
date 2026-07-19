@@ -86,8 +86,11 @@ public:
         if (slider.getSliderStyle() == juce::Slider::RotaryHorizontalVerticalDrag)
         {
             // The "hero" knob (Ganho) gets a display-size readout: it is the
-            // one number this plugin exists to show.
-            const float size = slider.getName() == "hero" ? 36.0f : 20.0f;
+            // one number this plugin exists to show. Panel-row knobs stay
+            // compact.
+            const float size = slider.getName() == "hero"  ? 36.0f
+                               : slider.getName() == "row" ? 13.0f
+                                                           : 20.0f;
             label->setFont(juce::Font(juce::FontOptions(size, juce::Font::bold)));
             label->setColour(juce::Label::textColourId, colours::accent);
             label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
