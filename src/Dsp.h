@@ -12,7 +12,7 @@ namespace autotrim::dsp
 constexpr float kGateDb = -60.0f;
 constexpr float kDefaultTargetDb = -10.0f;
 constexpr float kDefaultMaxTrimDb = 36.0f;
-constexpr float kDefaultMeasDurationS = 30.0f;
+constexpr float kDefaultMeasDurationS = 5.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
 // within this range. Weak sources can need +40 dB or more of make-up.
 constexpr float kTrimParamRangeDb = 60.0f;
@@ -500,6 +500,30 @@ struct HitDetector
             windowSamplesLeft = windowSamples;
         }
         return std::nullopt;
+    }
+};
+
+// Measurement window budget: elapsed time only advances while the signal is
+// above the arm threshold, so a paused source (a breath, a gap between
+// phrases) never burns through the window — this is what lets the default
+// duration be short (5 s) even for sources with pauses. Applies to every
+// profile, including drums: a rarely-hit tom's window only advances during
+// its hits, so it can take much longer than 5 s of wall clock to fill.
+struct MeasBudget
+{
+    int samplesLeft = 0;
+
+    void arm(float durationS, double sampleRate)
+    {
+        samplesLeft = (int) (durationS * (float) sampleRate);
+    }
+
+    // Feed once per block; true = the window is exhausted (measurement done).
+    bool step(int numSamples, bool aboveThreshold)
+    {
+        if (aboveThreshold)
+            samplesLeft -= numSamples;
+        return samplesLeft <= 0;
     }
 };
 

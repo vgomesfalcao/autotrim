@@ -318,7 +318,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         measAverager.reset();
         measCount = 0;
         measStartedLocal = false;
-        measSamplesLeft = 0;
+        measBudgetArmed = false;
         hitDetector.reset();
         // A fresh measurement recalibrates the trim: AGC evidence restarts.
         resetAgcState();
@@ -355,9 +355,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
-        // Every profile measures for the full time window; only what enters
-        // the average differs (slot peaks vs. per-hit peaks). Drums arm in
-        // the sample loop on the first hit; continuous profiles arm here.
+        // Every profile measures for the full window, but the window is a
+        // budget of *programme* time (see the pause below), not wall clock —
+        // only what enters the average differs (slot peaks vs. per-hit
+        // peaks). Drums arm in the sample loop on the first hit; continuous
+        // profiles arm here.
         if (! profile.hitBased && ! measStartedLocal && blockPeak > measArmLin)
         {
             measStartedLocal = true;
@@ -365,9 +367,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
         if (measStartedLocal)
         {
-            if (measSamplesLeft <= 0)
-                measSamplesLeft =
-                    (int) (registry::measDurationS.load() * (float) currentSampleRate);
+            if (! measBudgetArmed)
+            {
+                measBudgetArmed = true;
+                measBudget.arm(registry::measDurationS.load(), currentSampleRate);
+            }
 
             if (! profile.hitBased)
             {
@@ -378,8 +382,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     shared->measuredPeak.store(dsp::dbToGain(*avgDb));
             }
 
-            measSamplesLeft -= numSamples;
-            if (measSamplesLeft <= 0)
+            // The window only counts *programme* time: a block below the
+            // sensitivity pauses it instead of burning through the budget,
+            // so a source with gaps still gets a full window of real signal
+            // (this is what lets the default duration be short).
+            if (measBudget.step(numSamples, blockPeak > measArmLin))
             {
                 shared->measuring.store(false);
                 shared->measDone.store(true);

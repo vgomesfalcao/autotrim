@@ -367,6 +367,46 @@ int main()
         CHECK(! guard.step(quiet, dbToGain(-0.5f), target, cut, 0.1f).has_value());
     }
 
+    // Measurement budget: only counts down while the signal is above the arm
+    // threshold — a paused source never burns through the window.
+    {
+        const int sr = 100; // 1 sample = 10 ms, easy to reason about
+        MeasBudget budget;
+        budget.arm(1.0f, sr); // 1 s = 100 samples
+
+        // Continuous programme: exhausts in exactly 1 s.
+        bool done = false;
+        int samples = 0;
+        for (int i = 0; i < 20 && ! done; ++i)
+        {
+            samples += 5;
+            done = budget.step(5, true);
+        }
+        CHECK(done);
+        CHECK(samples == 100);
+
+        // Half programme, half silence: silence never counts, so it takes
+        // twice the wall-clock samples to exhaust the same 100-sample budget.
+        budget.arm(1.0f, sr);
+        done = false;
+        samples = 0;
+        for (int i = 0; i < 200 && ! done; ++i)
+        {
+            const bool above = (i % 2) == 0;
+            samples += 1;
+            done = budget.step(1, above);
+        }
+        CHECK(done);
+        CHECK(samples == 199); // 100 "above" steps interleaved with 99 silent
+
+        // Pure silence: never exhausts, no matter how long.
+        budget.arm(1.0f, sr);
+        done = false;
+        for (int i = 0; i < 10000 && ! done; ++i)
+            done = budget.step(1, false);
+        CHECK(! done);
+    }
+
     // Hit detector: capture window, retrigger cooldown, threshold.
     {
         HitDetector det;

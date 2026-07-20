@@ -52,11 +52,12 @@ private:
     // starts only when signal first crosses the gate. The captured level is
     // the average of peaks (slot peaks, or gated hit peaks for drums).
     dsp::SlotAverager measAverager;
+    dsp::MeasBudget measBudget;
     int measCount = 0; // drum hits captured (ring below)
     float measHitsDb[512] = {};
     uint32_t measEpoch = 0;
     bool measStartedLocal = false;
-    int measSamplesLeft = 0;
+    bool measBudgetArmed = false;
     double currentSampleRate = 48000.0;
 
     // Hit detection (drum profile): shared by the rider and the measurement.
