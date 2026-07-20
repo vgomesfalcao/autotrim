@@ -312,12 +312,18 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         {
             if (inHit)
             {
+                hitPeak = juce::jmax(hitPeak, framePeak);
                 if (--hitWindowSamplesLeft <= 0)
                 {
                     inHit = false;
                     hitCooldownSamples = hitRetriggerSamples - hitWindowSamples;
-                    ++measHitsCaptured;
-                    shared->measHitCount.store((uint32_t) measHitsCaptured);
+                    // Each hit's peak enters the running average that will
+                    // become the measured level.
+                    measSumDb += dsp::gainToDb(hitPeak);
+                    ++measCount;
+                    shared->measuredPeak.store(
+                        dsp::dbToGain(measSumDb / (float) measCount));
+                    shared->measHitCount.store((uint32_t) measCount);
                 }
             }
             else if (hitCooldownSamples > 0)
@@ -327,6 +333,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             else if (framePeak > measArmLin)
             {
                 inHit = true;
+                hitPeak = framePeak;
                 hitWindowSamplesLeft = hitWindowSamples;
                 if (! measStartedLocal)
                 {
@@ -358,10 +365,12 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (epoch != measEpoch)
     {
         measEpoch = epoch;
-        measPeak = 0.0f;
+        measSumDb = 0.0f;
+        measCount = 0;
+        measSlotPeak = 0.0f;
+        measSlotElapsed = 0.0f;
         measStartedLocal = false;
         measSamplesLeft = 0;
-        measHitsCaptured = 0;
         inHit = false;
         hitCooldownSamples = 0;
         // A fresh measurement recalibrates the trim: AGC evidence restarts.
@@ -462,41 +471,46 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
-        if (profile.hitBased)
+        // Every profile measures for the full time window; only what enters
+        // the average differs (slot peaks vs. per-hit peaks). Drums arm in
+        // the sample loop on the first hit; continuous profiles arm here.
+        if (! profile.hitBased && ! measStartedLocal && blockPeak > measArmLin)
         {
-            // Drum profile: the window closes after enough distinct hits, so
-            // one isolated transient never defines the trim alone. The hits
-            // themselves are detected per-sample in the loop above.
-            if (measStartedLocal)
-            {
-                measPeak = juce::jmax(measPeak, blockPeak);
-                shared->measuredPeak.store(measPeak);
-                if (measHitsCaptured >= dsp::kMeasDrumHits)
-                {
-                    shared->measuring.store(false);
-                    shared->measDone.store(true);
-                }
-            }
+            measStartedLocal = true;
+            shared->measStarted.store(true);
         }
-        else
+        if (measStartedLocal)
         {
-            if (! measStartedLocal && blockPeak > measArmLin)
-            {
-                measStartedLocal = true;
-                shared->measStarted.store(true);
+            if (measSamplesLeft <= 0)
                 measSamplesLeft =
                     (int) (registry::measDurationS.load() * (float) currentSampleRate);
-            }
-            if (measStartedLocal)
+
+            if (! profile.hitBased)
             {
-                measPeak = juce::jmax(measPeak, blockPeak);
-                shared->measuredPeak.store(measPeak);
-                measSamplesLeft -= numSamples;
-                if (measSamplesLeft <= 0)
+                // Average of 0.5 s slot peaks above the arm threshold: the
+                // trim calibrates the typical peak, not the loudest moment,
+                // and pauses never drag the average down.
+                measSlotPeak = juce::jmax(measSlotPeak, blockPeak);
+                measSlotElapsed += dt;
+                if (measSlotElapsed >= dsp::kMeasSlotS)
                 {
-                    shared->measuring.store(false);
-                    shared->measDone.store(true);
+                    measSlotElapsed = 0.0f;
+                    if (measSlotPeak > measArmLin)
+                    {
+                        measSumDb += dsp::gainToDb(measSlotPeak);
+                        ++measCount;
+                        shared->measuredPeak.store(
+                            dsp::dbToGain(measSumDb / (float) measCount));
+                    }
+                    measSlotPeak = 0.0f;
                 }
+            }
+
+            measSamplesLeft -= numSamples;
+            if (measSamplesLeft <= 0)
+            {
+                shared->measuring.store(false);
+                shared->measDone.store(true);
             }
         }
     }

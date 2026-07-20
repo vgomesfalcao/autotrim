@@ -603,8 +603,8 @@ void ChannelView::refresh()
         measureText = "Cancelar";
         if (proc.shared->measStarted.load()
             && dsp::profileFor((int) proc.shared->profile->load()).hitBased)
-            measureText += " (" + juce::String((int) proc.shared->measHitCount.load()) + "/"
-                           + juce::String(dsp::kMeasDrumHits) + " hits)";
+            measureText +=
+                " (" + juce::String((int) proc.shared->measHitCount.load()) + " hits)";
     }
     measureButton.setButtonText(measureText);
     measureButton.setEnabled(! measurement::isRunning() || proc.shared->measuring.load());
@@ -762,8 +762,7 @@ void PanelRow::refresh()
         {
             text = utf8("medindo…");
             if (dsp::profileFor((int) shared->profile->load()).hitBased)
-                text += " " + juce::String((int) shared->measHitCount.load()) + "/"
-                        + juce::String(dsp::kMeasDrumHits);
+                text += " " + juce::String((int) shared->measHitCount.load()) + " hits";
         }
         statusLabel.setText(text, juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);

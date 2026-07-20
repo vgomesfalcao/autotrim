@@ -12,7 +12,7 @@ namespace autotrim::dsp
 constexpr float kGateDb = -60.0f;
 constexpr float kDefaultTargetDb = -10.0f;
 constexpr float kDefaultMaxTrimDb = 36.0f;
-constexpr float kDefaultMeasDurationS = 4.0f;
+constexpr float kDefaultMeasDurationS = 30.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
 // within this range. Weak sources can need +40 dB or more of make-up.
 constexpr float kTrimParamRangeDb = 60.0f;
@@ -132,9 +132,11 @@ inline std::optional<float> agcCorrectionDb(float evidencePeakDb, float otherGai
 // sees signal above the gate (isolated sources like toms play at arbitrary
 // moments). Channels that never receive signal time out untouched.
 constexpr float kMeasArmTimeoutS = 90.0f;
-// Drum-profile channels measure by hit count instead of a time window: a
-// single timid transient never defines the trim alone.
-constexpr int kMeasDrumHits = 4;
+// The measured level is the *average* of peaks over the window, not the
+// single loudest moment: continuous profiles average 0.5 s slot peaks above
+// the arm threshold (pauses never drag the average down); drum profiles
+// average the peaks of every hit captured during the window.
+constexpr float kMeasSlotS = 0.5f;
 
 // Master loudness meter (panel instance): short-term LUFS per ITU-R BS.1770
 // (K-weighting + 3 s window), no gating (gating only applies to integrated).
