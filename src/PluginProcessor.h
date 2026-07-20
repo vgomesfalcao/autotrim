@@ -46,30 +46,21 @@ private:
     float gainLin = 1.0f;
     float gainCoef = 0.001f;
     // Sliding peak-hold detector for the continuous rider profiles.
-    float holdSlots[40] = {};
-    int holdSlotIndex = 0;
-    float holdSlotElapsed = 0.0f;
-    // Local measurement accumulators; reset when measEpoch changes so the
-    // panel's reset can never race the audio thread. The window is armed:
-    // counting starts only when signal first crosses the gate. The captured
-    // level is the average of peaks (slot peaks, or hit peaks for drums).
-    float measSumDb = 0.0f;
-    int measCount = 0;
-    float measSlotPeak = 0.0f;
-    float measSlotElapsed = 0.0f;
-    // Drum hits captured during the window (ring; the gated average drops
-    // bleed/ghost notes).
+    dsp::PeakHoldWindow riderHold;
+    // Local measurement state; reset when measEpoch changes so the panel's
+    // reset can never race the audio thread. The window is armed: counting
+    // starts only when signal first crosses the gate. The captured level is
+    // the average of peaks (slot peaks, or gated hit peaks for drums).
+    dsp::SlotAverager measAverager;
+    int measCount = 0; // drum hits captured (ring below)
     float measHitsDb[512] = {};
     uint32_t measEpoch = 0;
     bool measStartedLocal = false;
     int measSamplesLeft = 0;
     double currentSampleRate = 48000.0;
 
-    // Hit detection state (drum profile)
-    bool inHit = false;
-    float hitPeak = 0.0f;
-    int hitWindowSamplesLeft = 0;
-    int hitCooldownSamples = 0;
+    // Hit detection (drum profile): shared by the rider and the measurement.
+    dsp::HitDetector hitDetector;
     int hitWindowSamples = 2400;
     int hitRetriggerSamples = 4800;
     float hitHistoryDb[8] = {};
@@ -83,15 +74,8 @@ private:
     dsp::AgcObserver agcObserver;
     dsp::AgcBailDetector agcBail;
 
-    // Clip Guard state (output peaks above 0 dBFS)
-    float protClockS = 0.0f;
-    float protEventTimes[8] = {};
-    int protEventIndex = 0;
-    int protEventCount = 0;
-    bool protOverActive = false;
-    float protOverElapsedS = 0.0f;
-    float protOffenderMaxLin = 0.0f;
-    float protSinceOverS = 1000.0f;
+    // Clip Guard state machine (output peaks above 0 dBFS)
+    dsp::ClipGuard clipGuard;
 
     // LUFS analysis (panel instance only, master passthrough)
     dsp::Biquad lufsShelf[2], lufsHighpass[2];
@@ -101,7 +85,6 @@ private:
     float lufsSlotElapsed = 0.0f;
 
     void resetHitState();
-    void resetProtectionWindow();
     void resetAgcState();
     void analyzeLoudness(const juce::AudioBuffer<float>& buffer);
 

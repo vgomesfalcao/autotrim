@@ -370,6 +370,212 @@ inline float envelopeStep(float env, float sampleAbs, float attackCoef, float re
     return env + coef * (sampleAbs - env);
 }
 
+// The Clip Guard state machine, extracted pure for scenario tests: counts
+// clipping events (a sustained over re-arms one event per rearm period) and
+// fires a protective cut when enough land inside the window; after a quiet
+// hold with headroom the cut glides back to zero.
+struct ClipGuard
+{
+    float clockS = 0.0f;
+    float eventTimes[kProtectHitCount] = {};
+    int eventIndex = 0;
+    int eventCount = 0;
+    bool overActive = false;
+    float overElapsedS = 0.0f;
+    float offenderMaxLin = 0.0f;
+    float sinceOverS = 1000.0f;
+
+    void resetWindow()
+    {
+        eventIndex = 0;
+        eventCount = 0;
+        overActive = false;
+        overElapsedS = 0.0f;
+        offenderMaxLin = 0.0f;
+    }
+
+    // Feed once per block; cutDb is the currently applied cut (<= 0).
+    // Returns the new cut when it changes: deeper on a confirmed overload,
+    // shallower (toward 0) while releasing.
+    std::optional<float> step(float peakPostLin, float recentOutLin, float targetDb,
+                              float cutDb, float dt)
+    {
+        std::optional<float> newCut;
+        clockS += dt;
+        if (peakPostLin > dbToGain(kClipThresholdDb))
+        {
+            sinceOverS = 0.0f;
+            offenderMaxLin = std::max(offenderMaxLin, peakPostLin);
+            bool newEvent = false;
+            if (! overActive)
+            {
+                overActive = true;
+                overElapsedS = 0.0f;
+                newEvent = true;
+            }
+            else
+            {
+                overElapsedS += dt;
+                if (overElapsedS >= kProtectRearmS)
+                {
+                    overElapsedS = 0.0f;
+                    newEvent = true;
+                }
+            }
+            if (newEvent)
+            {
+                eventTimes[eventIndex] = clockS;
+                eventIndex = (eventIndex + 1) % kProtectHitCount;
+                eventCount = std::min(eventCount + 1, kProtectHitCount);
+                // After the increment, the next slot holds the oldest event.
+                const float oldest = eventTimes[eventIndex];
+                if (eventCount >= kProtectHitCount && clockS - oldest <= kProtectWindowS)
+                {
+                    const float cut = targetDb - gainToDb(offenderMaxLin);
+                    newCut = std::clamp(cutDb + cut, -kProtectMaxCutDb, 0.0f);
+                    resetWindow();
+                }
+            }
+        }
+        else
+        {
+            overActive = false;
+            sinceOverS += dt;
+        }
+
+        // Temporary by design: after the hold with no overs, and with
+        // headroom in the recent output, glide back to zero.
+        if (! newCut && cutDb < 0.0f && sinceOverS > kProtectHoldS)
+        {
+            if (gainToDb(recentOutLin) + 1.0f <= kClipThresholdDb)
+            {
+                const float released = std::min(0.0f, cutDb + kProtectReleaseDbPerS * dt);
+                newCut = released >= -0.05f ? 0.0f : released;
+            }
+        }
+        return newCut;
+    }
+};
+
+// Per-sample transient detector shared by the drum rider and the drum
+// measurement: captures each hit's peak over a short window, with a
+// retrigger cooldown so one drum stroke never counts twice.
+struct HitDetector
+{
+    bool inHit = false;
+    float peak = 0.0f;
+    int windowSamplesLeft = 0;
+    int cooldownSamples = 0;
+
+    void reset()
+    {
+        inHit = false;
+        peak = 0.0f;
+        windowSamplesLeft = 0;
+        cooldownSamples = 0;
+    }
+
+    // Returns the hit's peak (linear) when its capture window completes.
+    std::optional<float> step(float framePeak, float thresholdLin, int windowSamples,
+                              int retriggerSamples)
+    {
+        if (inHit)
+        {
+            peak = std::max(peak, framePeak);
+            if (--windowSamplesLeft <= 0)
+            {
+                inHit = false;
+                cooldownSamples = retriggerSamples - windowSamples;
+                return peak;
+            }
+        }
+        else if (cooldownSamples > 0)
+        {
+            --cooldownSamples;
+        }
+        else if (framePeak > thresholdLin)
+        {
+            inHit = true;
+            peak = framePeak;
+            windowSamplesLeft = windowSamples;
+        }
+        return std::nullopt;
+    }
+};
+
+// Continuous-profile measurement: running average (dB) of 0.5 s slot peaks
+// above the arm threshold — pauses never enter the average.
+struct SlotAverager
+{
+    float sumDb = 0.0f;
+    int count = 0;
+    float slotPeak = 0.0f;
+    float slotElapsed = 0.0f;
+
+    void reset()
+    {
+        sumDb = 0.0f;
+        count = 0;
+        slotPeak = 0.0f;
+        slotElapsed = 0.0f;
+    }
+
+    // Feed once per block; returns the updated average (dB) at the slot
+    // boundaries that contained program.
+    std::optional<float> step(float blockPeakLin, float dt, float armLin)
+    {
+        std::optional<float> avgDb;
+        slotPeak = std::max(slotPeak, blockPeakLin);
+        slotElapsed += dt;
+        if (slotElapsed >= kMeasSlotS)
+        {
+            slotElapsed = 0.0f;
+            if (slotPeak > armLin)
+            {
+                sumDb += gainToDb(slotPeak);
+                ++count;
+                avgDb = sumDb / (float) count;
+            }
+            slotPeak = 0.0f;
+        }
+        return avgDb;
+    }
+};
+
+// Sliding peak-hold window for the continuous rider detector: reads "the
+// recent peak" so the rider stays put between syllables and short pauses.
+struct PeakHoldWindow
+{
+    float slots[kMaxHoldSlots] = {};
+    int index = 0;
+    float elapsed = 0.0f;
+
+    void reset()
+    {
+        for (auto& slot : slots)
+            slot = 0.0f;
+        index = 0;
+        elapsed = 0.0f;
+    }
+
+    float step(float blockPeakLin, float dt, int numSlots)
+    {
+        slots[index % kMaxHoldSlots] =
+            std::max(slots[index % kMaxHoldSlots], blockPeakLin);
+        elapsed += dt;
+        while (elapsed >= kHoldSlotS)
+        {
+            elapsed -= kHoldSlotS;
+            index = (index + 1) % numSlots;
+            slots[index] = 0.0f;
+        }
+        float holdMax = blockPeakLin;
+        for (int i = 0; i < numSlots; ++i)
+            holdMax = std::max(holdMax, slots[i]);
+        return holdMax;
+    }
+};
+
 // The AGC's whole observation state machine — 3 s recent-peak window,
 // persistence evidence, silence detection — extracted pure so the scenario
 // tests can drive it slot by slot: the state machines are where the real

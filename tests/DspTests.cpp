@@ -290,6 +290,137 @@ int main()
         CHECK(approx(corr, -8.0f));
     }
 
+    // Clip Guard state machine, driven block by block (dt = 0.1 s).
+    // Target -10; an offending peak of +1 dBFS implies an -11 dB cut.
+    {
+        const float over = dbToGain(1.0f), quiet = dbToGain(-12.0f);
+        const float target = -10.0f;
+
+        // 5 short bursts 0.5 s apart (within the 3 s window): cut on the 5th.
+        ClipGuard guard;
+        float cut = 0.0f;
+        int fires = 0;
+        for (int burst = 0; burst < 5; ++burst)
+        {
+            if (const auto c = guard.step(over, quiet, target, cut, 0.1f))
+            {
+                cut = *c;
+                ++fires;
+            }
+            for (int i = 0; i < 4; ++i)
+                guard.step(quiet, quiet, target, cut, 0.1f);
+        }
+        CHECK(fires == 1);
+        CHECK(approx(cut, -11.0f));
+
+        // Only 4 bursts: never fires.
+        guard = ClipGuard();
+        fires = 0;
+        for (int burst = 0; burst < 4; ++burst)
+        {
+            if (guard.step(over, quiet, target, 0.0f, 0.1f))
+                ++fires;
+            for (int i = 0; i < 4; ++i)
+                guard.step(quiet, quiet, target, 0.0f, 0.1f);
+        }
+        CHECK(fires == 0);
+
+        // Bursts 1 s apart: 5 events always span 4 s > window, never fires.
+        guard = ClipGuard();
+        fires = 0;
+        for (int burst = 0; burst < 8; ++burst)
+        {
+            if (guard.step(over, quiet, target, 0.0f, 0.1f))
+                ++fires;
+            for (int i = 0; i < 9; ++i)
+                guard.step(quiet, quiet, target, 0.0f, 0.1f);
+        }
+        CHECK(fires == 0);
+
+        // Sustained over: re-arms one event per 0.3 s, fires within ~1.5 s.
+        guard = ClipGuard();
+        fires = 0;
+        cut = 0.0f;
+        for (int i = 0; i < 15 && fires == 0; ++i)
+            if (const auto c = guard.step(over, quiet, target, cut, 0.1f))
+            {
+                cut = *c;
+                ++fires;
+            }
+        CHECK(fires == 1);
+        CHECK(approx(cut, -11.0f));
+
+        // Release: quiet with headroom glides back at 0.5 dB/s only after
+        // the 5 s hold; a hot recent output pauses the give-back.
+        guard = ClipGuard();
+        guard.sinceOverS = 0.0f; // as if an over just happened
+        cut = -6.0f;
+        bool released = false;
+        for (int i = 0; i < 45; ++i)
+            released = released
+                       || guard.step(quiet, quiet, target, cut, 0.1f).has_value();
+        CHECK(! released); // 4.5 s: hold not over yet
+        std::optional<float> give;
+        for (int i = 0; i < 10 && ! give; ++i)
+            give = guard.step(quiet, quiet, target, cut, 0.1f);
+        CHECK(give.has_value() && *give > cut && *give < 0.0f);
+        CHECK(! guard.step(quiet, dbToGain(-0.5f), target, cut, 0.1f).has_value());
+    }
+
+    // Hit detector: capture window, retrigger cooldown, threshold.
+    {
+        HitDetector det;
+        const int window = 4, retrigger = 10;
+        CHECK(! det.step(0.4f, 0.5f, window, retrigger).has_value()); // below thr
+        CHECK(! det.inHit);
+        CHECK(! det.step(0.6f, 0.5f, window, retrigger).has_value()); // hit starts
+        CHECK(det.inHit);
+        det.step(0.9f, 0.5f, window, retrigger);
+        det.step(0.7f, 0.5f, window, retrigger);
+        det.step(0.3f, 0.5f, window, retrigger);
+        const auto hit = det.step(0.2f, 0.5f, window, retrigger); // window ends
+        CHECK(hit.has_value() && approx(*hit, 0.9f));
+        // Cooldown (retrigger - window = 6 samples): loud frames don't retrigger.
+        for (int i = 0; i < 6; ++i)
+        {
+            CHECK(! det.step(0.9f, 0.5f, window, retrigger).has_value());
+            CHECK(! det.inHit);
+        }
+        det.step(0.9f, 0.5f, window, retrigger);
+        CHECK(det.inHit); // cooldown over: new hit
+    }
+
+    // Slot averager: mean dB of program slots; pause slots never enter.
+    {
+        SlotAverager avg;
+        const float arm = dbToGain(-50.0f);
+        // Two blocks per 0.5 s slot (dt 0.25).
+        avg.step(dbToGain(-6.0f), 0.25f, arm);
+        auto a = avg.step(dbToGain(-6.0f), 0.25f, arm);
+        CHECK(a.has_value() && approx(*a, -6.0f));
+        avg.step(dbToGain(-12.0f), 0.25f, arm);
+        a = avg.step(dbToGain(-12.0f), 0.25f, arm);
+        CHECK(a.has_value() && approx(*a, -9.0f)); // (-6 + -12) / 2
+        // Pause slot: below the arm threshold, average untouched.
+        avg.step(0.0f, 0.25f, arm);
+        a = avg.step(0.0f, 0.25f, arm);
+        CHECK(! a.has_value());
+        avg.step(dbToGain(-12.0f), 0.25f, arm);
+        a = avg.step(dbToGain(-12.0f), 0.25f, arm);
+        CHECK(a.has_value() && approx(*a, -10.0f)); // (-6 -12 -12) / 3
+    }
+
+    // Rider peak-hold window: holds the recent peak for the window length,
+    // then lets it fall out.
+    {
+        PeakHoldWindow hold;
+        const int numSlots = 4; // 0.4 s window at 0.1 s slots
+        CHECK(approx(hold.step(1.0f, 0.1f, numSlots), 1.0f));
+        CHECK(approx(hold.step(0.0f, 0.1f, numSlots), 1.0f)); // still held
+        CHECK(approx(hold.step(0.0f, 0.1f, numSlots), 1.0f));
+        CHECK(approx(hold.step(0.0f, 0.1f, numSlots), 0.0f)); // fell out
+    }
+
     // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
     const float r = onepoleCoef(0.300f, 48000.0f);

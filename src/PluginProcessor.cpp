@@ -161,28 +161,13 @@ void AutoTrimProcessor::analyzeLoudness(const juce::AudioBuffer<float>& buffer)
 
 void AutoTrimProcessor::resetHitState()
 {
-    for (auto& slot : holdSlots)
-        slot = 0.0f;
-    holdSlotIndex = 0;
-    holdSlotElapsed = 0.0f;
-    inHit = false;
-    hitPeak = 0.0f;
-    hitWindowSamplesLeft = 0;
-    hitCooldownSamples = 0;
+    riderHold.reset();
+    hitDetector.reset();
     hitHistoryCount = 0;
     hitHistoryPos = 0;
     sinceHitS = 1000.0f;
     sinceCorrectionS = 1000.0f;
-    resetProtectionWindow();
-}
-
-void AutoTrimProcessor::resetProtectionWindow()
-{
-    protEventIndex = 0;
-    protEventCount = 0;
-    protOverActive = false;
-    protOverElapsedS = 0.0f;
-    protOffenderMaxLin = 0.0f;
+    clipGuard.resetWindow();
 }
 
 void AutoTrimProcessor::resetAgcState()
@@ -278,63 +263,33 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
         if (detectHits)
         {
-            if (inHit)
+            if (const auto hit =
+                    hitDetector.step(framePeak, sensLin, hitWindowSamples, hitRetriggerSamples))
             {
-                hitPeak = juce::jmax(hitPeak, framePeak);
-                if (--hitWindowSamplesLeft <= 0)
-                {
-                    hitHistoryDb[hitHistoryPos] = dsp::gainToDb(hitPeak);
-                    hitHistoryPos = (hitHistoryPos + 1) % dsp::kHitHistory;
-                    hitHistoryCount = juce::jmin(hitHistoryCount + 1, dsp::kHitHistory);
-                    inHit = false;
-                    hitCooldownSamples = hitRetriggerSamples - hitWindowSamples;
-                    hitCompleted = true;
-                }
-            }
-            else if (hitCooldownSamples > 0)
-            {
-                --hitCooldownSamples;
-            }
-            else if (framePeak > sensLin)
-            {
-                inHit = true;
-                hitPeak = framePeak;
-                hitWindowSamplesLeft = hitWindowSamples;
+                hitHistoryDb[hitHistoryPos] = dsp::gainToDb(*hit);
+                hitHistoryPos = (hitHistoryPos + 1) % dsp::kHitHistory;
+                hitHistoryCount = juce::jmin(hitHistoryCount + 1, dsp::kHitHistory);
+                hitCompleted = true;
             }
         }
         else if (countMeasHits)
         {
-            if (inHit)
+            if (const auto hit = hitDetector.step(framePeak, measArmLin, hitWindowSamples,
+                                                  hitRetriggerSamples))
             {
-                hitPeak = juce::jmax(hitPeak, framePeak);
-                if (--hitWindowSamplesLeft <= 0)
-                {
-                    inHit = false;
-                    hitCooldownSamples = hitRetriggerSamples - hitWindowSamples;
-                    // Each hit's peak enters the gated average: hits far
-                    // below the strong ones (bleed, ghost notes) are dropped
-                    // so they never drag the measured level down.
-                    measHitsDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(hitPeak);
-                    ++measCount;
-                    shared->measuredPeak.store(dsp::dbToGain(dsp::gatedHitAverageDb(
-                        measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
-                    shared->measHitCount.store((uint32_t) measCount);
-                }
+                // Each hit's peak enters the gated average: hits far below
+                // the strong ones (bleed, ghost notes) are dropped so they
+                // never drag the measured level down.
+                measHitsDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(*hit);
+                ++measCount;
+                shared->measuredPeak.store(dsp::dbToGain(dsp::gatedHitAverageDb(
+                    measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
+                shared->measHitCount.store((uint32_t) measCount);
             }
-            else if (hitCooldownSamples > 0)
+            if (hitDetector.inHit && ! measStartedLocal)
             {
-                --hitCooldownSamples;
-            }
-            else if (framePeak > measArmLin)
-            {
-                inHit = true;
-                hitPeak = framePeak;
-                hitWindowSamplesLeft = hitWindowSamples;
-                if (! measStartedLocal)
-                {
-                    measStartedLocal = true;
-                    shared->measStarted.store(true);
-                }
+                measStartedLocal = true;
+                shared->measStarted.store(true);
             }
         }
 
@@ -360,14 +315,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (epoch != measEpoch)
     {
         measEpoch = epoch;
-        measSumDb = 0.0f;
+        measAverager.reset();
         measCount = 0;
-        measSlotPeak = 0.0f;
-        measSlotElapsed = 0.0f;
         measStartedLocal = false;
         measSamplesLeft = 0;
-        inHit = false;
-        hitCooldownSamples = 0;
+        hitDetector.reset();
         // A fresh measurement recalibrates the trim: AGC evidence restarts.
         resetAgcState();
     }
@@ -377,74 +329,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // event per rearm period so it is caught too.
     if (clipGuardOn && ! measuring)
     {
-        protClockS += dt;
-        const float overThresholdLin = dsp::dbToGain(dsp::kClipThresholdDb);
-        if (blockPeakPost > overThresholdLin)
+        if (const auto newCut = clipGuard.step(blockPeakPost, shared->peakPostTrim.load(),
+                                               shared->targetDb->load(), protectDb, dt))
         {
-            protSinceOverS = 0.0f;
-            protOffenderMaxLin = juce::jmax(protOffenderMaxLin, blockPeakPost);
-            bool newEvent = false;
-            if (! protOverActive)
-            {
-                protOverActive = true;
-                protOverElapsedS = 0.0f;
-                newEvent = true;
-            }
-            else
-            {
-                protOverElapsedS += dt;
-                if (protOverElapsedS >= dsp::kProtectRearmS)
-                {
-                    protOverElapsedS = 0.0f;
-                    newEvent = true;
-                }
-            }
-
-            if (newEvent)
-            {
-                protEventTimes[protEventIndex] = protClockS;
-                protEventIndex = (protEventIndex + 1) % dsp::kProtectHitCount;
-                protEventCount = juce::jmin(protEventCount + 1, dsp::kProtectHitCount);
-                // After the increment, the next slot holds the oldest event.
-                const float oldest = protEventTimes[protEventIndex];
-                if (protEventCount >= dsp::kProtectHitCount
-                    && protClockS - oldest <= dsp::kProtectWindowS)
-                {
-                    const float cut =
-                        shared->targetDb->load() - dsp::gainToDb(protOffenderMaxLin);
-                    shared->protectOffsetDb.store(
-                        juce::jlimit(-dsp::kProtectMaxCutDb, 0.0f, protectDb + cut));
-                    shared->protectionActive.store(true);
-                    resetProtectionWindow();
-                }
-            }
-        }
-        else
-        {
-            protOverActive = false;
-            protSinceOverS += dt;
-        }
-
-        // The cut is temporary: once the overs stop for the hold period and
-        // the recent output peak leaves headroom for the give-back, glide the
-        // protection back to zero. Hot signal returning re-triggers the cut.
-        if (protectDb < 0.0f && protSinceOverS > dsp::kProtectHoldS)
-        {
-            const float recentOutDb = dsp::gainToDb(shared->peakPostTrim.load());
-            if (recentOutDb + 1.0f <= dsp::kClipThresholdDb)
-            {
-                const float released =
-                    juce::jmin(0.0f, protectDb + dsp::kProtectReleaseDbPerS * dt);
-                if (released >= -0.05f)
-                {
-                    shared->protectOffsetDb.store(0.0f);
-                    shared->protectionActive.store(false);
-                }
-                else
-                {
-                    shared->protectOffsetDb.store(released);
-                }
-            }
+            shared->protectOffsetDb.store(*newCut);
+            shared->protectionActive.store(*newCut < 0.0f);
         }
     }
 
@@ -454,7 +343,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     {
         shared->protectOffsetDb.store(0.0f);
         shared->protectionActive.store(false);
-        resetProtectionWindow();
+        clipGuard.resetWindow();
     }
 
     // A stale rider correction must not keep acting after the mode is off.
@@ -485,20 +374,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 // Average of 0.5 s slot peaks above the arm threshold: the
                 // trim calibrates the typical peak, not the loudest moment,
                 // and pauses never drag the average down.
-                measSlotPeak = juce::jmax(measSlotPeak, blockPeak);
-                measSlotElapsed += dt;
-                if (measSlotElapsed >= dsp::kMeasSlotS)
-                {
-                    measSlotElapsed = 0.0f;
-                    if (measSlotPeak > measArmLin)
-                    {
-                        measSumDb += dsp::gainToDb(measSlotPeak);
-                        ++measCount;
-                        shared->measuredPeak.store(
-                            dsp::dbToGain(measSumDb / (float) measCount));
-                    }
-                    measSlotPeak = 0.0f;
-                }
+                if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
+                    shared->measuredPeak.store(dsp::dbToGain(*avgDb));
             }
 
             measSamplesLeft -= numSamples;
@@ -527,19 +404,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             // Sliding peak-hold: coarse 100 ms slots over the profile window.
             const int numSlots = juce::jlimit(
                 1, dsp::kMaxHoldSlots, (int) (profile.holdS / dsp::kHoldSlotS));
-            holdSlots[holdSlotIndex % dsp::kMaxHoldSlots] =
-                juce::jmax(holdSlots[holdSlotIndex % dsp::kMaxHoldSlots], blockPeak);
-            holdSlotElapsed += dt;
-            while (holdSlotElapsed >= dsp::kHoldSlotS)
-            {
-                holdSlotElapsed -= dsp::kHoldSlotS;
-                holdSlotIndex = (holdSlotIndex + 1) % numSlots;
-                holdSlots[holdSlotIndex] = 0.0f;
-            }
-            float holdMax = blockPeak;
-            for (int i = 0; i < numSlots; ++i)
-                holdMax = juce::jmax(holdMax, holdSlots[i]);
-
+            const float holdMax = riderHold.step(blockPeak, dt, numSlots);
             const float levelDb = dsp::gainToDb(holdMax);
             // The rider rides around the AGC-corrected base, so the two
             // loops close on the same output and never fight.
