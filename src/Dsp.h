@@ -110,6 +110,13 @@ constexpr float kAgcRangeMaxDb = 20.0f;
 // should sit is a pause or bleed, never "the song got quieter".
 constexpr float kAgcPauseMarginDb = 3.0f;
 
+// Sudden-loud bail-out: a boost above this with the output blasting more
+// than the margin past the target (a surprise guitar solo after a quiet
+// passage) proves the measured calibration was right — the boost is dropped
+// immediately instead of waiting for the slow evidence.
+constexpr float kAgcBailOffsetDb = 5.0f;
+constexpr float kAgcBailMarginDb = 5.0f;
+
 // The correction one AGC re-trim applies, from the peak observed over the
 // evidence period (the same formula a re-measurement would use). otherGainDb
 // is the *base* gain only (trim + pending AGC) — never the rider, whose

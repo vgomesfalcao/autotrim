@@ -598,6 +598,21 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
     else if (! measuring)
     {
+        // Sudden-loud bail-out (block rate, immediate): with a boost above
+        // +5 dB active and the output blasting 5 dB past the target — a
+        // surprise guitar solo — the loud source proves the measured
+        // calibration was right. Drop the boost now; the gain smoother
+        // makes the return click-free.
+        if (agcDb > dsp::kAgcBailOffsetDb
+            && blockPeakPost
+                   > dsp::dbToGain(shared->targetDb->load() + dsp::kAgcBailMarginDb))
+        {
+            shared->agcOffsetDb.store(0.0f);
+            agcDeviationS = 0.0f;
+            agcDevSign = 0;
+            agcEvidencePeakLin = 0.0f;
+        }
+
         agcSlotPeak = juce::jmax(agcSlotPeak, blockPeak);
         agcSlotElapsed += dt;
         while (agcSlotElapsed >= dsp::kAgcSlotS)
