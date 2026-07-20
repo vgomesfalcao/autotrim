@@ -11,10 +11,11 @@ namespace
     constexpr int kChannelWidth = 460;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 616;
-    constexpr int kRowHeight = 46;
+    // Tall enough for a usable per-row gain knob (it was nearly invisible).
+    constexpr int kRowHeight = 64;
     constexpr int kColName = 160;
     constexpr int kColPreset = 120;
-    constexpr int kColTrim = 132;
+    constexpr int kColTrim = 148;
     constexpr int kColAuto = 70;
     constexpr int kColStatus = 130;
 
@@ -155,6 +156,15 @@ void MeterBar::setLevelLin(float newLevelLin)
         repaint();
 }
 
+void MeterBar::setAgcTint(bool shouldTint)
+{
+    if (shouldTint != agcTint)
+    {
+        agcTint = shouldTint;
+        repaint();
+    }
+}
+
 void MeterBar::setScaleAnchorDb(float newAnchorDb)
 {
     if (std::abs(newAnchorDb - anchorDb) > 0.05f)
@@ -197,13 +207,22 @@ void MeterBar::paint(juce::Graphics& g)
     const float frac = juce::jlimit(0.0f, 1.0f, mapDbToFrac(levelDb));
     if (frac > 0.001f)
     {
-        // Teal up to the target mark, then amber into red past it.
-        juce::ColourGradient gradient(colours::meterLow, r.getX(), 0.0f,
-                                      colours::meterHigh, r.getRight(), 0.0f, false);
-        gradient.addColour(kMeterTargetFrac, colours::meterLow);
-        gradient.addColour(juce::jmin(kMeterTargetFrac + 0.12, 0.99), colours::warning);
-        g.setGradientFill(gradient);
-        g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
+        if (agcTint)
+        {
+            // Yellow: the level shown includes an active AGC correction.
+            g.setColour(colours::warning);
+            g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
+        }
+        else
+        {
+            // Teal up to the target mark, then amber into red past it.
+            juce::ColourGradient gradient(colours::meterLow, r.getX(), 0.0f,
+                                          colours::meterHigh, r.getRight(), 0.0f, false);
+            gradient.addColour(kMeterTargetFrac, colours::meterLow);
+            gradient.addColour(juce::jmin(kMeterTargetFrac + 0.12, 0.99), colours::warning);
+            g.setGradientFill(gradient);
+            g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
+        }
     }
 
     // Peak-hold marker: the calm reference to compare against the target.
@@ -237,11 +256,12 @@ void MeterBar::paint(juce::Graphics& g)
 
 //==============================================================================
 void StatusStrip::update(float riderOffsetDb, float rideRangeDb, bool riderEnabled,
-                         State newState, float protectDb)
+                         State newState, float protectDb, float agcDb)
 {
     const bool changed = std::abs(riderOffsetDb - offset) > 0.05f
                          || std::abs(rideRangeDb - range) > 0.05f || riderEnabled != riderOn
-                         || newState != state || std::abs(protectDb - protect) > 0.05f;
+                         || newState != state || std::abs(protectDb - protect) > 0.05f
+                         || std::abs(agcDb - agc) > 0.05f;
     if (! changed)
         return;
     offset = riderOffsetDb;
@@ -249,6 +269,7 @@ void StatusStrip::update(float riderOffsetDb, float rideRangeDb, bool riderEnabl
     riderOn = riderEnabled;
     state = newState;
     protect = protectDb;
+    agc = agcDb;
     repaint();
 }
 
@@ -266,6 +287,20 @@ void StatusStrip::paint(juce::Graphics& g)
         g.drawRoundedRectangle(badge.reduced(0.5f), 8.0f, 1.0f);
         g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
         g.drawText(utf8("CLIP ") + formatDb(protect), badge.reduced(8.0f, 0.0f),
+                   juce::Justification::centred);
+        r.removeFromRight(10.0f);
+    }
+
+    // Active AGC correction: yellow badge with the temporary offset.
+    if (std::abs(agc) > 0.05f)
+    {
+        auto badge = r.removeFromRight(112.0f);
+        g.setColour(colours::warning.withAlpha(0.16f));
+        g.fillRoundedRectangle(badge, 8.0f);
+        g.setColour(colours::warning);
+        g.drawRoundedRectangle(badge.reduced(0.5f), 8.0f, 1.0f);
+        g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
+        g.drawText("AGC " + formatDb(agc), badge.reduced(8.0f, 0.0f),
                    juce::Justification::centred);
         r.removeFromRight(10.0f);
     }
@@ -480,12 +515,12 @@ void ChannelView::resized()
     r.removeFromTop(14);
 
     // Set-once configuration card ("Avançado" adds four collapsed rows)
-    configCard = r.removeFromTop(advancedOpen ? 382 : 242);
+    configCard = r.removeFromTop(advancedOpen ? 422 : 282);
     auto card = configCard.reduced(16, 14);
     sectionLabel.setBounds(card.removeFromTop(18));
     card.removeFromTop(12);
 
-    auto knobRow = card.removeFromTop(150);
+    auto knobRow = card.removeFromTop(190);
     auto gainCol = knobRow.removeFromLeft(knobRow.getWidth() * 11 / 20);
     trimCaption.setBounds(gainCol.removeFromTop(24));
     trimSlider.setBounds(gainCol);
@@ -536,7 +571,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 382 + (advancedOpen ? 382 : 242);
+    return 382 + (advancedOpen ? 422 : 282);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -596,6 +631,17 @@ void ChannelView::refresh()
     outMeter.setScaleAnchorDb(target);
     outMeter.setTickDb(target);
 
+    // Yellow = an AGC correction is acting: output meter, knob and chip.
+    const float agc = proc.shared->agcOffsetDb.load();
+    const bool agcActive = std::abs(agc) > 0.05f;
+    outMeter.setAgcTint(agcActive);
+    const auto knobFill = agcActive ? colours::warning : colours::accent;
+    if (trimSlider.findColour(juce::Slider::rotarySliderFillColourId) != knobFill)
+    {
+        trimSlider.setColour(juce::Slider::rotarySliderFillColourId, knobFill);
+        trimSlider.repaint();
+    }
+
     const auto state = proc.shared->measuring.load()
                            ? (proc.shared->measStarted.load() ? StatusStrip::measuring
                                                               : StatusStrip::armed)
@@ -605,7 +651,7 @@ void ChannelView::refresh()
         proc.shared->isAutomationOn() && proc.shared->riderOn->load() > 0.5f;
     const auto& profile = dsp::profileFor((int) proc.shared->profile->load());
     const float protect = proc.shared->protectOffsetDb.load();
-    statusStrip.update(riderOffset, profile.rideRangeDb, riderEnabled, state, protect);
+    statusStrip.update(riderOffset, profile.rideRangeDb, riderEnabled, state, protect, agc);
 }
 
 //==============================================================================
@@ -621,7 +667,7 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
     trimKnob.setTextBoxStyle(juce::Slider::TextBoxRight, false, 62, 18);
     trimKnob.setRange(-dsp::kTrimParamRangeDb, dsp::kTrimParamRangeDb, 0.1);
     trimKnob.setTextValueSuffix(" dB");
-    trimKnob.setMouseDragSensitivity(300);
+    trimKnob.setMouseDragSensitivity(400);
     trimKnob.setDoubleClickReturnValue(true, 0.0);
     trimKnob.onValueChange = [this]
     { presets::writeParam(shared->trimParam, (float) trimKnob.getValue()); };
@@ -685,6 +731,17 @@ void PanelRow::refresh()
     if (! trimKnob.isMouseButtonDown())
         trimKnob.setValue(trim, juce::dontSendNotification);
 
+    // Yellow = AGC correction acting on this channel.
+    const float agcDb = shared->agcOffsetDb.load();
+    const bool agcActive = std::abs(agcDb) > 0.05f;
+    outMeter.setAgcTint(agcActive);
+    const auto knobFill = agcActive ? colours::warning : colours::accent;
+    if (trimKnob.findColour(juce::Slider::rotarySliderFillColourId) != knobFill)
+    {
+        trimKnob.setColour(juce::Slider::rotarySliderFillColourId, knobFill);
+        trimKnob.repaint();
+    }
+
     const bool automationOn = shared->isAutomationOn();
     automationToggle.setToggleState(automationOn, juce::dontSendNotification);
     refreshRegButton(regButton, *shared);
@@ -717,6 +774,11 @@ void PanelRow::refresh()
     {
         statusLabel.setText("desativado", juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::subtext);
+    }
+    else if (agcActive)
+    {
+        statusLabel.setText("AGC " + formatDb(agcDb), juce::dontSendNotification);
+        statusLabel.setColour(juce::Label::textColourId, colours::warning);
     }
     else if (shared->riderOn != nullptr && shared->riderOn->load() > 0.5f)
     {
@@ -767,6 +829,7 @@ void MiniPanelRow::refresh()
     nameLabel.setColour(juce::Label::textColourId,
                         shared->protectionActive.load() ? colours::meterHigh : colours::text);
     outMeter.setLevelLin(shared->peakPostTrim.load());
+    outMeter.setAgcTint(std::abs(shared->agcOffsetDb.load()) > 0.05f);
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
     outMeter.setScaleAnchorDb(target);
@@ -1047,10 +1110,6 @@ AutoTrimEditor::ViewMode AutoTrimEditor::currentMode() const
 
 void AutoTrimEditor::timerCallback()
 {
-    // Pending AGC re-trims become part of the Ganho parameter here, so the
-    // readout always tells the truth about the applied gain.
-    registry::foldAgcRetrims();
-
     if (currentMode() != viewMode)
         rebuildView();
 

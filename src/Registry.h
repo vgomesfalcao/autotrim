@@ -92,11 +92,5 @@ namespace registry
     // Session-wide settings owned by the panel instance.
     extern std::atomic<float> maxTrimDb;
     extern std::atomic<float> measDurationS;
-
-    // Folds pending AGC re-trims into each channel's trim parameter so the
-    // Ganho readout stays the source of truth. Message thread only (called
-    // from the editor timers); the audio thread keeps applying the offset
-    // until it is folded, so nothing depends on a window being open.
-    void foldAgcRetrims();
 } // namespace registry
 } // namespace autotrim

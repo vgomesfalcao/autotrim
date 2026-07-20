@@ -23,6 +23,8 @@ public:
     void setTickDb(float newTickDb);
     void setTickVisible(bool shouldShow) { tickVisible = shouldShow; }
     void setUnit(const juce::String& newUnit) { unit = newUnit; }
+    // Yellow fill while an AGC correction is acting on this channel.
+    void setAgcTint(bool shouldTint);
     void paint(juce::Graphics& g) override;
 
 private:
@@ -35,6 +37,7 @@ private:
     juce::String unit { " dB" };
     // Console-style readability: peak-hold marker (compare against the target
     // calmly) and a slow-refresh numeric readout.
+    bool agcTint = false;
     float holdDb = -200.0f;
     double holdSetMs = 0.0;
     float textDb = -200.0f;
@@ -50,11 +53,11 @@ public:
     enum State { normal = 0, armed, measuring, noSignal };
 
     void update(float riderOffsetDb, float rideRangeDb, bool riderEnabled, State newState,
-                float protectDb);
+                float protectDb, float agcDb);
     void paint(juce::Graphics& g) override;
 
 private:
-    float offset = 0.0f, range = 6.0f, protect = 0.0f;
+    float offset = 0.0f, range = 6.0f, protect = 0.0f, agc = 0.0f;
     bool riderOn = false;
     State state = normal;
 };

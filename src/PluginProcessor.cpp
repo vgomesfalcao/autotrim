@@ -527,11 +527,14 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 holdMax = juce::jmax(holdMax, holdSlots[i]);
 
             const float levelDb = dsp::gainToDb(holdMax);
+            // The rider rides around the AGC-corrected base, so the two
+            // loops close on the same output and never fight.
+            const float baseDb = trimDb + agcDb;
             const bool hasProgram =
                 levelDb >= sensDb
-                && dsp::riderSeesProgram(levelDb, trimDb, offsetDb, target, profile);
+                && dsp::riderSeesProgram(levelDb, baseDb, offsetDb, target, profile);
             newOffset = hasProgram
-                            ? dsp::riderOffsetStep(offsetDb, levelDb, trimDb, target, profile,
+                            ? dsp::riderOffsetStep(offsetDb, levelDb, baseDb, target, profile,
                                                    dt, upRate, downRate)
                             : dsp::riderIdleStep(offsetDb, profile, dt);
         }
@@ -547,7 +550,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     sumDb += hitHistoryDb[i];
                 const float avgHitDb = sumDb / (float) juce::jmax(1, hitHistoryCount);
                 newOffset = dsp::riderOffsetStep(
-                    offsetDb, avgHitDb, trimDb, target, profile,
+                    offsetDb, avgHitDb, trimDb + agcDb, target, profile,
                     juce::jmin(sinceCorrectionS, dsp::kHitCorrectionMaxDtS), upRate, downRate);
                 sinceCorrectionS = 0.0f;
             }
@@ -561,13 +564,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             shared->riderOffsetDb.store(newOffset);
     }
 
-    // AGC: observes all the time — slots whose recent peak sits below the
-    // channel sensitivity are background noise/pauses and merely *hold* the
-    // evidence — and when the program level stays shifted from the target for
-    // the full hold period, it corrects the previously measured trim in one
-    // step, like a re-measurement (not a rider). The correction lands in
-    // agcOffsetDb (applied immediately, click-free via the gain smoother) and
-    // the message thread folds it into the trim parameter.
+    // AGC: observes all the time and, when the program level stays shifted
+    // from the target for the full hold period, corrects the gain in one
+    // step, like a re-measurement (not a rider). The correction lives in
+    // agcOffsetDb — separate from the measured trim, shown in yellow — and
+    // 3 s of silence resets it, returning the channel to the measured gain.
     if (! agcOn)
     {
         if (agcDb != 0.0f)
@@ -591,7 +592,17 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 winMax = juce::jmax(winMax, slot);
             const float winMaxDb = dsp::gainToDb(winMax);
             if (winMaxDb < sensDb)
-                continue; // noise floor: not evidence for or against
+            {
+                // The whole 3 s window below the sensitivity = silence: the
+                // channel returns to the measured gain (the AGC correction is
+                // temporary by design).
+                if (shared->agcOffsetDb.load() != 0.0f)
+                    shared->agcOffsetDb.store(0.0f);
+                agcDeviationS = 0.0f;
+                agcDevSign = 0;
+                agcEvidencePeakLin = 0.0f;
+                continue;
+            }
 
             const float target = shared->targetDb->load();
             // Pre-rider, pre-Clip Guard: the AGC judges the *base* calibration

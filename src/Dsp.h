@@ -95,10 +95,13 @@ constexpr float kProtectReleaseDbPerS = 0.5f;
 constexpr float kAgcSlotS = 0.5f;
 constexpr int kAgcWinSlots = 6;      // 3 s recent-peak window (syllable gaps)
 constexpr float kAgcToleranceDb = 3.0f;
-// Default persistence before a re-trim fires; editable per channel.
-constexpr float kAgcHoldS = 7.0f;
+// Default persistence before a re-trim fires; editable per channel. The AGC
+// correction is a *separate* offset (shown in yellow), never written into the
+// measured trim: 3 s of silence (the observation window emptying below the
+// sensitivity) resets it, returning the channel to the measured gain.
+constexpr float kAgcHoldS = 12.0f;
 constexpr float kAgcHoldMinS = 3.0f;
-constexpr float kAgcHoldMaxS = 60.0f;
+constexpr float kAgcHoldMaxS = 20.0f;
 constexpr float kAgcRangeDb = 12.0f; // max correction per re-trim
 // Like the rider's pause margin: a level *this* far below where the program
 // should sit is a pause or bleed, never "the song got quieter".

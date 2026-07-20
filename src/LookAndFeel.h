@@ -111,7 +111,9 @@ public:
             g.fillRoundedRectangle(r, 9.0f);
             g.setColour(colours::cardOutline);
             g.drawRoundedRectangle(r.reduced(0.5f), 9.0f, 1.0f);
-            g.setColour(colours::accent);
+            // Follows the knob's fill colour: teal normally, yellow while an
+            // AGC correction is acting.
+            g.setColour(slider->findColour(juce::Slider::rotarySliderFillColourId));
             // Explicit display size: the label's own font can lag behind
             // look-and-feel changes, so never trust it here.
             g.setFont(juce::Font(juce::FontOptions(36.0f, juce::Font::bold)));
