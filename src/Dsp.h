@@ -369,4 +369,97 @@ inline float envelopeStep(float env, float sampleAbs, float attackCoef, float re
     const float coef = sampleAbs > env ? attackCoef : releaseCoef;
     return env + coef * (sampleAbs - env);
 }
+
+// The AGC's whole observation state machine — 3 s recent-peak window,
+// persistence evidence, silence detection — extracted pure so the scenario
+// tests can drive it slot by slot: the state machines are where the real
+// bugs live, not the formulas. Short pauses are bridged by the peak window;
+// only a *full* window below the sensitivity reads as silence.
+struct AgcObserver
+{
+    struct Action
+    {
+        bool silenceReset = false;         // 3 s below sensitivity: back to base
+        std::optional<float> correctionDb; // deviation persisted: add to offset
+    };
+
+    float win[kAgcWinSlots] = {};
+    int winIndex = 0;
+    float slotPeak = 0.0f;
+    float slotElapsed = 0.0f;
+    float deviationS = 0.0f;
+    int devSign = 0;
+    float evidencePeakLin = 0.0f;
+
+    void resetEvidence()
+    {
+        deviationS = 0.0f;
+        devSign = 0;
+        evidencePeakLin = 0.0f;
+    }
+
+    void reset()
+    {
+        for (auto& slot : win)
+            slot = 0.0f;
+        winIndex = 0;
+        slotPeak = 0.0f;
+        slotElapsed = 0.0f;
+        resetEvidence();
+    }
+
+    // Feed once per block with the pre-trim block peak; appliedDb is the base
+    // gain only (trim + pending AGC — never the rider or the Clip Guard cut).
+    Action step(float blockPeakLin, float dt, float sensDb, float appliedDb, float targetDb,
+                float holdS, float rangeDb)
+    {
+        Action action;
+        slotPeak = std::max(slotPeak, blockPeakLin);
+        slotElapsed += dt;
+        while (slotElapsed >= kAgcSlotS)
+        {
+            slotElapsed -= kAgcSlotS;
+            winIndex = (winIndex + 1) % kAgcWinSlots;
+            win[winIndex] = slotPeak;
+            slotPeak = 0.0f;
+
+            float winMax = 0.0f;
+            for (float slot : win)
+                winMax = std::max(winMax, slot);
+            const float winMaxDb = gainToDb(winMax);
+            if (winMaxDb < sensDb)
+            {
+                action.silenceReset = true;
+                resetEvidence();
+                continue;
+            }
+
+            const auto slotCorr = agcCorrectionDb(winMaxDb, appliedDb, targetDb, rangeDb);
+            if (! slotCorr)
+            {
+                // Back within tolerance restarts the evidence; a pause-like
+                // drop (too far below the program) just holds it.
+                if (std::abs(targetDb - (winMaxDb + appliedDb)) <= kAgcToleranceDb)
+                    resetEvidence();
+                continue;
+            }
+
+            const int sign = *slotCorr > 0.0f ? 1 : -1;
+            if (sign != devSign)
+            {
+                resetEvidence();
+                devSign = sign;
+            }
+            deviationS += kAgcSlotS;
+            evidencePeakLin = std::max(evidencePeakLin, winMax);
+            if (deviationS >= holdS)
+            {
+                action.correctionDb =
+                    agcCorrectionDb(gainToDb(evidencePeakLin), appliedDb, targetDb, rangeDb);
+                resetEvidence();
+            }
+        }
+        return action;
+    }
+};
 } // namespace autotrim::dsp

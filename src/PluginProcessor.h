@@ -78,15 +78,9 @@ private:
     float sinceHitS = 1000.0f;
     float sinceCorrectionS = 1000.0f;
 
-    // AGC observation state: 3 s recent-peak ring evaluated at slot rate, plus
-    // the persistence evidence (deviation must hold for kAgcHoldS of program).
-    float agcWin[6] = {};
-    int agcWinIndex = 0;
-    float agcSlotPeak = 0.0f;
-    float agcSlotElapsed = 0.0f;
-    float agcDeviationS = 0.0f;
-    int agcDevSign = 0;
-    float agcEvidencePeakLin = 0.0f;
+    // AGC observation (window + persistence evidence) and solo bail-out,
+    // both pure structs so the scenario tests can drive them directly.
+    dsp::AgcObserver agcObserver;
     dsp::AgcBailDetector agcBail;
 
     // Clip Guard state (output peaks above 0 dBFS)

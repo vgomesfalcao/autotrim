@@ -199,6 +199,97 @@ int main()
         CHECK(! fired);
     }
 
+    // AGC observer state machine, driven slot by slot (0.5 s per step).
+    // Setup: target -10, trim +16 => program calibrated at -26 pre-trim.
+    {
+        const float sens = -50.0f, target = -10.0f, applied = 16.0f;
+        const float hold = 12.0f, range = 10.0f;
+        AgcObserver obs;
+
+        // Quiet section 6 dB under: fires exactly after the hold time
+        // (24 slots) with the full +6 correction.
+        int fired = -1;
+        float corr = 0.0f;
+        for (int i = 0; i < 30 && fired < 0; ++i)
+        {
+            const auto a = obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range);
+            if (a.correctionDb)
+            {
+                fired = i;
+                corr = *a.correctionDb;
+            }
+        }
+        CHECK(fired == 23);
+        CHECK(approx(corr, 6.0f));
+
+        // Short gaps between phrases are bridged by the 3 s peak window:
+        // every 3rd slot silent still fires on schedule.
+        obs.reset();
+        fired = -1;
+        for (int i = 0; i < 30 && fired < 0; ++i)
+        {
+            const float peak = (i % 3 == 2) ? 0.0f : dbToGain(-32.0f);
+            if (obs.step(peak, 0.5f, sens, applied, target, hold, range).correctionDb)
+                fired = i;
+        }
+        CHECK(fired == 23);
+
+        // Level back within tolerance restarts the evidence — and the 3 s
+        // peak window keeps bridging that on-target moment for 6 more slots
+        // before the evidence can start accumulating again.
+        obs.reset();
+        for (int i = 0; i < 20; ++i)
+            obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range);
+        obs.step(dbToGain(-26.0f), 0.5f, sens, applied, target, hold, range); // on target
+        fired = -1;
+        for (int i = 0; i < 28 && fired < 0; ++i)
+            if (obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range)
+                    .correctionDb)
+                fired = i;
+        CHECK(fired == -1); // 5 bridged slots + 23 accumulating (11.5 s) < hold
+        CHECK(obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range)
+                  .correctionDb.has_value());
+
+        // Full 3 s below the sensitivity reads as silence (offset reset).
+        obs.reset();
+        for (int i = 0; i < 4; ++i)
+            obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range);
+        fired = -1;
+        for (int i = 0; i < 6 && fired < 0; ++i)
+            if (obs.step(0.0f, 0.5f, sens, applied, target, hold, range).silenceReset)
+                fired = i;
+        CHECK(fired == 5); // exactly when the window has fully emptied
+
+        // Bleed far below the program (beyond range + pause margin): evidence
+        // holds, never fires, never reads as silence.
+        obs.reset();
+        bool any = false;
+        for (int i = 0; i < 40; ++i)
+        {
+            const auto a = obs.step(dbToGain(-45.0f), 0.5f, sens, applied, target, hold, range);
+            any = any || a.correctionDb.has_value() || a.silenceReset;
+        }
+        CHECK(! any);
+
+        // Sign flip restarts the evidence: loud after quiet fires a cut only
+        // after its own full hold time.
+        obs.reset();
+        for (int i = 0; i < 20; ++i)
+            obs.step(dbToGain(-32.0f), 0.5f, sens, applied, target, hold, range);
+        fired = -1;
+        for (int i = 0; i < 30 && fired < 0; ++i)
+        {
+            const auto a = obs.step(dbToGain(-18.0f), 0.5f, sens, applied, target, hold, range);
+            if (a.correctionDb)
+            {
+                fired = i;
+                corr = *a.correctionDb;
+            }
+        }
+        CHECK(fired == 23);
+        CHECK(approx(corr, -8.0f));
+    }
+
     // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
     const float r = onepoleCoef(0.300f, 48000.0f);

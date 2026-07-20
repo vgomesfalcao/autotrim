@@ -187,14 +187,7 @@ void AutoTrimProcessor::resetProtectionWindow()
 
 void AutoTrimProcessor::resetAgcState()
 {
-    for (auto& slot : agcWin)
-        slot = 0.0f;
-    agcWinIndex = 0;
-    agcSlotPeak = 0.0f;
-    agcSlotElapsed = 0.0f;
-    agcDeviationS = 0.0f;
-    agcDevSign = 0;
-    agcEvidencePeakLin = 0.0f;
+    agcObserver.reset();
     agcBail.reset();
 }
 
@@ -594,8 +587,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     {
         if (agcDb != 0.0f)
             shared->agcOffsetDb.store(0.0f);
-        if (agcDevSign != 0 || agcDeviationS != 0.0f)
-            resetAgcState();
+        // Unconditional: guarantees a fresh window and evidence on re-enable.
+        resetAgcState();
     }
     else if (! measuring)
     {
@@ -615,9 +608,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             {
                 shared->agcOffsetDb.store(0.0f);
                 shared->riderOffsetDb.store(0.0f);
-                agcDeviationS = 0.0f;
-                agcDevSign = 0;
-                agcEvidencePeakLin = 0.0f;
+                agcObserver.resetEvidence();
             }
         }
         else
@@ -625,75 +616,22 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             agcBail.reset();
         }
 
-        agcSlotPeak = juce::jmax(agcSlotPeak, blockPeak);
-        agcSlotElapsed += dt;
-        while (agcSlotElapsed >= dsp::kAgcSlotS)
-        {
-            agcSlotElapsed -= dsp::kAgcSlotS;
-            agcWinIndex = (agcWinIndex + 1) % dsp::kAgcWinSlots;
-            agcWin[agcWinIndex] = agcSlotPeak;
-            agcSlotPeak = 0.0f;
-
-            float winMax = 0.0f;
-            for (float slot : agcWin)
-                winMax = juce::jmax(winMax, slot);
-            const float winMaxDb = dsp::gainToDb(winMax);
-            if (winMaxDb < sensDb)
-            {
-                // The whole 3 s window below the sensitivity = silence: the
-                // channel returns to the measured gain (the AGC correction is
-                // temporary by design).
-                if (shared->agcOffsetDb.load() != 0.0f)
-                    shared->agcOffsetDb.store(0.0f);
-                agcDeviationS = 0.0f;
-                agcDevSign = 0;
-                agcEvidencePeakLin = 0.0f;
-                continue;
-            }
-
-            const float target = shared->targetDb->load();
-            // Pre-rider, pre-Clip Guard: the AGC judges the *base* calibration
-            // (trim + its own pending correction). The rider's temporary
-            // correction would mask exactly the permanent shifts the AGC
-            // exists to fix, and a protective cut is intentional attenuation,
-            // not calibration.
-            const float appliedDb = trimDb + agcDb;
-            const float agcRange = shared->agcRangeDb->load();
-            const auto slotCorr = dsp::agcCorrectionDb(winMaxDb, appliedDb, target, agcRange);
-            if (! slotCorr)
-            {
-                // Back within tolerance restarts the evidence; a pause-like
-                // drop (too far below the program) just holds it.
-                const float error = target - (winMaxDb + appliedDb);
-                if (std::abs(error) <= dsp::kAgcToleranceDb)
-                {
-                    agcDeviationS = 0.0f;
-                    agcDevSign = 0;
-                    agcEvidencePeakLin = 0.0f;
-                }
-                continue;
-            }
-
-            const int sign = *slotCorr > 0.0f ? 1 : -1;
-            if (sign != agcDevSign)
-            {
-                agcDevSign = sign;
-                agcDeviationS = 0.0f;
-                agcEvidencePeakLin = 0.0f;
-            }
-            agcDeviationS += dsp::kAgcSlotS;
-            agcEvidencePeakLin = juce::jmax(agcEvidencePeakLin, winMax);
-            if (agcDeviationS >= shared->agcHoldS->load())
-            {
-                if (auto corr = dsp::agcCorrectionDb(dsp::gainToDb(agcEvidencePeakLin),
-                                                     appliedDb, target, agcRange))
-                    shared->agcOffsetDb.store(
-                        juce::jlimit(-agcRange, agcRange, agcDb + *corr));
-                agcDeviationS = 0.0f;
-                agcDevSign = 0;
-                agcEvidencePeakLin = 0.0f;
-            }
-        }
+        // Pre-rider, pre-Clip Guard: the AGC judges the *base* calibration
+        // (trim + its own pending correction). The rider's temporary
+        // correction would mask exactly the permanent shifts the AGC exists
+        // to fix, and a protective cut is intentional attenuation, not
+        // calibration.
+        const float agcRange = shared->agcRangeDb->load();
+        const auto action = agcObserver.step(blockPeak, dt, sensDb, trimDb + agcDb,
+                                             shared->targetDb->load(),
+                                             shared->agcHoldS->load(), agcRange);
+        // 3 s below the sensitivity: the channel returns to the measured
+        // gain (the AGC correction is temporary by design).
+        if (action.silenceReset && shared->agcOffsetDb.load() != 0.0f)
+            shared->agcOffsetDb.store(0.0f);
+        if (action.correctionDb)
+            shared->agcOffsetDb.store(
+                juce::jlimit(-agcRange, agcRange, agcDb + *action.correctionDb));
     }
 }
 
