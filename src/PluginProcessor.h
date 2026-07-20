@@ -87,6 +87,7 @@ private:
     float agcDeviationS = 0.0f;
     int agcDevSign = 0;
     float agcEvidencePeakLin = 0.0f;
+    dsp::AgcBailDetector agcBail;
 
     // Clip Guard state (output peaks above 0 dBFS)
     float protClockS = 0.0f;

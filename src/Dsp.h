@@ -110,12 +110,47 @@ constexpr float kAgcRangeMaxDb = 20.0f;
 // should sit is a pause or bleed, never "the song got quieter".
 constexpr float kAgcPauseMarginDb = 3.0f;
 
-// Sudden-loud bail-out: a boost above this with the output blasting more
-// than the margin past the target (a surprise guitar solo after a quiet
-// passage) proves the measured calibration was right — the boost is dropped
-// immediately instead of waiting for the slow evidence.
-constexpr float kAgcBailOffsetDb = 5.0f;
+// Sudden-loud bail-out: any meaningful AGC boost with the output sustained
+// past target + margin (a surprise guitar solo after a quiet passage) proves
+// the measured calibration was right — the boost is dropped right away
+// instead of waiting for the slow evidence. "Sustained" is accumulated
+// over-time tolerating the gaps between the note peaks of a phrase, so a
+// picked solo fires within a second while a lone spike (mic bump, pick
+// scrape) never accumulates enough and the boost survives it.
+constexpr float kAgcBailMinBoostDb = 1.0f;
 constexpr float kAgcBailMarginDb = 5.0f;
+constexpr float kAgcBailOverS = 0.2f; // accumulated over-time that fires
+constexpr float kAgcBailGapS = 0.3f;  // silence between overs before restart
+
+struct AgcBailDetector
+{
+    float overAccumS = 0.0f;
+    float gapS = 0.0f;
+
+    void reset() { overAccumS = gapS = 0.0f; }
+
+    // Feed once per block; true = drop the boost now.
+    bool step(bool over, float dt)
+    {
+        if (over)
+        {
+            gapS = 0.0f;
+            overAccumS += dt;
+            if (overAccumS >= kAgcBailOverS)
+            {
+                reset();
+                return true;
+            }
+        }
+        else
+        {
+            gapS += dt;
+            if (gapS > kAgcBailGapS)
+                overAccumS = 0.0f;
+        }
+        return false;
+    }
+};
 
 // The correction one AGC re-trim applies, from the peak observed over the
 // evidence period (the same formula a re-measurement would use). otherGainDb

@@ -195,6 +195,7 @@ void AutoTrimProcessor::resetAgcState()
     agcDeviationS = 0.0f;
     agcDevSign = 0;
     agcEvidencePeakLin = 0.0f;
+    agcBail.reset();
 }
 
 bool AutoTrimProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -598,19 +599,30 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     }
     else if (! measuring)
     {
-        // Sudden-loud bail-out (block rate, immediate): with a boost above
-        // +5 dB active and the output blasting 5 dB past the target — a
-        // surprise guitar solo — the loud source proves the measured
-        // calibration was right. Drop the boost now; the gain smoother
-        // makes the return click-free.
-        if (agcDb > dsp::kAgcBailOffsetDb
-            && blockPeakPost
-                   > dsp::dbToGain(shared->targetDb->load() + dsp::kAgcBailMarginDb))
+        // Sudden-loud bail-out: any meaningful boost with the output
+        // *sustained* past target + 5 dB — a surprise guitar solo — proves
+        // the measured calibration was right. Accumulated over-time (gap
+        // tolerant) fires within a second on a picked solo but survives a
+        // lone spike. The rider offset is zeroed too: it was tracking the
+        // boosted output, and keeping it would bury the solo below the
+        // target for seconds while it re-converges at the slow up-rate.
+        if (agcDb > dsp::kAgcBailMinBoostDb)
         {
-            shared->agcOffsetDb.store(0.0f);
-            agcDeviationS = 0.0f;
-            agcDevSign = 0;
-            agcEvidencePeakLin = 0.0f;
+            const bool over =
+                blockPeakPost
+                > dsp::dbToGain(shared->targetDb->load() + dsp::kAgcBailMarginDb);
+            if (agcBail.step(over, dt))
+            {
+                shared->agcOffsetDb.store(0.0f);
+                shared->riderOffsetDb.store(0.0f);
+                agcDeviationS = 0.0f;
+                agcDevSign = 0;
+                agcEvidencePeakLin = 0.0f;
+            }
+        }
+        else
+        {
+            agcBail.reset();
         }
 
         agcSlotPeak = juce::jmax(agcSlotPeak, blockPeak);

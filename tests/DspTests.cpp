@@ -158,6 +158,47 @@ int main()
         CHECK(approx(gatedHitAverageDb(eight, 8), -10.5f));
     }
 
+    // AGC bail-out detector: a sustained note fires fast, a picked solo
+    // accumulates through its note gaps, a lone spike never fires, and
+    // widely spaced spikes never accumulate.
+    {
+        AgcBailDetector bail;
+        // Sustained note: 0.2 s of continuous over fires.
+        bool fired = false;
+        for (int i = 0; i < 4 && ! fired; ++i)
+            fired = bail.step(true, 0.05f);
+        CHECK(fired);
+
+        // Lone 50 ms spike: never fires, and a long gap clears the memory.
+        bail.reset();
+        CHECK(! bail.step(true, 0.05f));
+        for (int i = 0; i < 8; ++i)
+            CHECK(! bail.step(false, 0.05f));
+        CHECK(approx(bail.overAccumS, 0.0f));
+
+        // Picked solo: 50 ms peaks with 200 ms gaps accumulate and fire.
+        bail.reset();
+        fired = false;
+        for (int note = 0; note < 6 && ! fired; ++note)
+        {
+            fired = bail.step(true, 0.05f);
+            for (int i = 0; i < 4 && ! fired; ++i)
+                bail.step(false, 0.05f);
+        }
+        CHECK(fired);
+
+        // Spikes 0.5 s apart: the gap reset always wins, never fires.
+        bail.reset();
+        fired = false;
+        for (int spike = 0; spike < 10; ++spike)
+        {
+            fired = fired || bail.step(true, 0.05f);
+            for (int i = 0; i < 10; ++i)
+                fired = fired || bail.step(false, 0.05f);
+        }
+        CHECK(! fired);
+    }
+
     // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
     const float r = onepoleCoef(0.300f, 48000.0f);
