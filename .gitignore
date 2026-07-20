@@ -1,3 +1,5 @@
 /target
 /.docker-cargo
 /build
+/build-mac
+/testdata

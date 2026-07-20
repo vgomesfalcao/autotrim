@@ -59,6 +59,24 @@ Os bundles saem em `build/AutoTrim_artefacts/Release/`:
 
 Valide com `auval -v aufx Atrm Vgfa` e abra o Logic (se não aparecer, reinicie o Logic ou rode `killall -9 AudioComponentRegistrar`).
 
+## Simulador offline (testar com lives gravadas)
+
+O alvo `autotrim-sim` roda o **processor real** sobre um WAV/AIFF (um canal
+gravado de uma live) e imprime a trajetória do ganho com timestamp: medição,
+correções e bail-outs do AGC, cortes do Clip Guard, e **bumps** (variação de
+ganho > 3 dB em 100 ms fora da aplicação da medição). Sai com código 0 quando
+não há bumps nem clipping — dá para usar gravações reais como teste de
+regressão.
+
+```sh
+scripts/docker-build.sh   # compila também o autotrim-sim
+build/autotrim_sim_artefacts/Release/autotrim-sim testdata/guitarra.wav \
+    --target -12 --profile instrumento --rider --agc --meas 30 --csv traj.csv
+```
+
+Coloque os arquivos em `testdata/` (ignorado pelo git). O CSV opcional tem a
+trajetória por bloco (entrada, saída, trim, rider, AGC, clip) para plotar.
+
 ## Roadmap
 
 - **Sidechain de música (estilo Vocal Rider)**: subir a voz automaticamente quando a banda cresce, alimentando o rider com um sidechain do mix. Pesquisado e especificado, deixado para depois por complexidade × retorno (ver Waves Vocal Rider: parâmetro "Music Sensitivity").

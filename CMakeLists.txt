@@ -52,3 +52,25 @@ enable_testing()
 add_executable(dsp_tests tests/DspTests.cpp)
 target_include_directories(dsp_tests PRIVATE src)
 add_test(NAME dsp_tests COMMAND dsp_tests)
+
+# Offline simulator: runs the real processor over a WAV file (a recorded live
+# channel) and reports the gain trajectory — measurement, rider, AGC, Clip
+# Guard — flagging bumps, overs and every automatic action with a timestamp.
+juce_add_console_app(autotrim_sim PRODUCT_NAME "autotrim-sim")
+target_sources(autotrim_sim PRIVATE
+    tools/Simulate.cpp
+    src/PluginProcessor.cpp
+    src/PluginEditor.cpp
+    src/Registry.cpp
+    src/Measurement.cpp)
+target_include_directories(autotrim_sim PRIVATE src)
+target_compile_definitions(autotrim_sim PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_MODAL_LOOPS_PERMITTED=1)
+target_link_libraries(autotrim_sim PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_formats
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags)
