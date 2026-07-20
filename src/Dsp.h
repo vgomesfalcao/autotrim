@@ -162,7 +162,11 @@ inline float gatedHitAverageDb(const float* hitsDb, int count)
     std::copy(hitsDb, hitsDb + n, sorted);
     std::sort(sorted, sorted + n, [](float a, float b) { return a > b; });
 
-    const float refDb = n >= 8 ? sorted[n / 10] : sorted[std::min(1, n - 1)];
+    // P90 for dense sources, but never the loudest hit itself (index >= 1):
+    // with few hits the reference degrades to the second loudest, and a
+    // single freak rimshot can never become the reference at any count.
+    const int refIdx = std::min(std::max(1, n / 10), n - 1);
+    const float refDb = sorted[refIdx];
     const float gateDb = refDb - kMeasHitGateDb;
 
     float sum = 0.0f;

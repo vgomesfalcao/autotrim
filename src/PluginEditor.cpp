@@ -86,7 +86,7 @@ namespace
         button.setButtonText("Reg");
         button.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
         button.setColour(juce::TextButton::textColourOffId, colours::text);
-        button.onClick = [&button, shared]
+        button.onClick = [shared]
         {
             if (shared->measuring.load())
                 measurement::cancel();

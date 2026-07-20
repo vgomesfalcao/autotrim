@@ -149,6 +149,13 @@ int main()
         for (int i = 1; i < 100; ++i)
             freak[i] = -12.0f;
         CHECK(approx(gatedHitAverageDb(freak, 100), -11.88f));
+        // Regression: with exactly 8 hits the reference must not be the
+        // loudest hit — a rimshot among 8 would exclude all the real ones.
+        float eight[8];
+        eight[0] = 0.0f;
+        for (int i = 1; i < 8; ++i)
+            eight[i] = -12.0f;
+        CHECK(approx(gatedHitAverageDb(eight, 8), -10.5f));
     }
 
     // Envelope attacks faster than it releases
