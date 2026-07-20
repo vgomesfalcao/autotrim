@@ -18,7 +18,6 @@ namespace registry
 {
     std::atomic<float> maxTrimDb { dsp::kDefaultMaxTrimDb };
     std::atomic<float> measDurationS { dsp::kDefaultMeasDurationS };
-    std::atomic<float> measDominantPeak { 0.0f };
 
     namespace
     {

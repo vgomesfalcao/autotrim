@@ -81,10 +81,6 @@ constexpr float kMeasArmTimeoutS = 90.0f;
 // Drum-profile channels measure by hit count instead of a time window: a
 // single timid transient never defines the trim alone.
 constexpr int kMeasDrumHits = 4;
-// Cross-channel dominance: while measuring, a channel only arms/counts hits
-// when its peak is within this many dB of the loudest channel in the session
-// — stage bleed is never the loudest, the direct source is.
-constexpr float kMeasDominanceDb = 6.0f;
 
 // Master loudness meter (panel instance): short-term LUFS per ITU-R BS.1770
 // (K-weighting + 3 s window), no gating (gating only applies to integrated).

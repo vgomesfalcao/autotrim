@@ -211,10 +211,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // Drum measurement counts hits (the rider's hit machinery is idle then).
     const bool countMeasHits = measuring && profile.hitBased;
     const float measGateLin = dsp::dbToGain(dsp::kGateDb);
-    // Dominance floor: bleed (well below the loudest channel right now)
-    // must never arm a measurement or count as a hit.
-    const float dominanceFloorLin =
-        registry::measDominantPeak.load() * dsp::dbToGain(-dsp::kMeasDominanceDb);
+    // Measurement arms at the channel's own sensitivity threshold (never
+    // below the no-signal gate): the per-channel knob that rejects bleed.
+    // Cross-channel dominance was tried and reverted — pre-trim levels are
+    // not comparable across preamps, so a quiet channel could never win.
+    const float measArmLin = juce::jmax(sensLin, measGateLin);
     bool hitCompleted = false;
 
     float offsetDb = shared->riderOffsetDb.load();
@@ -276,7 +277,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             {
                 --hitCooldownSamples;
             }
-            else if (framePeak > measGateLin && framePeak >= dominanceFloorLin)
+            else if (framePeak > measArmLin)
             {
                 inHit = true;
                 hitWindowSamplesLeft = hitWindowSamples;
@@ -423,8 +424,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
         else
         {
-            if (! measStartedLocal && blockPeak > measGateLin
-                && blockPeak >= dominanceFloorLin)
+            if (! measStartedLocal && blockPeak > measArmLin)
             {
                 measStartedLocal = true;
                 shared->measStarted.store(true);
