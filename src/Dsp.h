@@ -102,7 +102,10 @@ constexpr float kAgcToleranceDb = 3.0f;
 constexpr float kAgcHoldS = 12.0f;
 constexpr float kAgcHoldMinS = 3.0f;
 constexpr float kAgcHoldMaxS = 20.0f;
-constexpr float kAgcRangeDb = 12.0f; // max correction per re-trim
+// Default max correction per re-trim; editable per channel.
+constexpr float kAgcRangeDb = 10.0f;
+constexpr float kAgcRangeMinDb = 1.0f;
+constexpr float kAgcRangeMaxDb = 20.0f;
 // Like the rider's pause margin: a level *this* far below where the program
 // should sit is a pause or bleed, never "the song got quieter".
 constexpr float kAgcPauseMarginDb = 3.0f;
@@ -115,14 +118,14 @@ constexpr float kAgcPauseMarginDb = 3.0f;
 // attenuation. Empty while the level is close enough to the target, or when
 // the deviation looks like a pause/bleed rather than a program change.
 inline std::optional<float> agcCorrectionDb(float evidencePeakDb, float otherGainDb,
-                                            float targetDb)
+                                            float targetDb, float rangeDb)
 {
     const float error = targetDb - (evidencePeakDb + otherGainDb);
     if (std::abs(error) <= kAgcToleranceDb)
         return std::nullopt;
-    if (error > kAgcRangeDb + kAgcPauseMarginDb)
+    if (error > rangeDb + kAgcPauseMarginDb)
         return std::nullopt;
-    return std::clamp(error, -kAgcRangeDb, kAgcRangeDb);
+    return std::clamp(error, -rangeDb, rangeDb);
 }
 
 // Armed measurement: the window only starts counting when the channel first

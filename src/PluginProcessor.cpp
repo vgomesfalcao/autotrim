@@ -31,6 +31,10 @@ namespace
             ParameterID { "agctime", 1 }, "Tempo do AGC",
             NormalisableRange<float>(dsp::kAgcHoldMinS, dsp::kAgcHoldMaxS, 1.0f),
             dsp::kAgcHoldS, AudioParameterFloatAttributes().withLabel("s")));
+        layout.add(std::make_unique<AudioParameterFloat>(
+            ParameterID { "agcrange", 1 }, utf8("Máx. do AGC"),
+            NormalisableRange<float>(dsp::kAgcRangeMinDb, dsp::kAgcRangeMaxDb, 0.5f),
+            dsp::kAgcRangeDb, AudioParameterFloatAttributes().withLabel("dB")));
         // Clip Guard: the emergency cut on real clipping (> 0 dBFS). On by
         // default; the toggle lives in the Avançado section.
         layout.add(std::make_unique<AudioParameterBool>(
@@ -67,6 +71,7 @@ AutoTrimProcessor::AutoTrimProcessor()
     shared->riderOn = apvts.getRawParameterValue("rider");
     shared->agcOn = apvts.getRawParameterValue("agc");
     shared->agcHoldS = apvts.getRawParameterValue("agctime");
+    shared->agcRangeDb = apvts.getRawParameterValue("agcrange");
     shared->clipGuardOn = apvts.getRawParameterValue("clipguard");
     shared->profile = apvts.getRawParameterValue("profile");
     shared->sensitivityDb = apvts.getRawParameterValue("sens");
@@ -611,7 +616,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             // exists to fix, and a protective cut is intentional attenuation,
             // not calibration.
             const float appliedDb = trimDb + agcDb;
-            const auto slotCorr = dsp::agcCorrectionDb(winMaxDb, appliedDb, target);
+            const float agcRange = shared->agcRangeDb->load();
+            const auto slotCorr = dsp::agcCorrectionDb(winMaxDb, appliedDb, target, agcRange);
             if (! slotCorr)
             {
                 // Back within tolerance restarts the evidence; a pause-like
@@ -638,9 +644,9 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             if (agcDeviationS >= shared->agcHoldS->load())
             {
                 if (auto corr = dsp::agcCorrectionDb(dsp::gainToDb(agcEvidencePeakLin),
-                                                     appliedDb, target))
-                    shared->agcOffsetDb.store(juce::jlimit(
-                        -dsp::kAgcRangeDb, dsp::kAgcRangeDb, agcDb + *corr));
+                                                     appliedDb, target, agcRange))
+                    shared->agcOffsetDb.store(
+                        juce::jlimit(-agcRange, agcRange, agcDb + *corr));
                 agcDeviationS = 0.0f;
                 agcDevSign = 0;
                 agcEvidencePeakLin = 0.0f;

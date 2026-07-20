@@ -365,6 +365,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
       sensAttachment(proc.apvts, "sens", sensSlider),
       speedAttachment(proc.apvts, "speed", speedSlider),
       agcTimeAttachment(proc.apvts, "agctime", agcTimeSlider),
+      agcRangeAttachment(proc.apvts, "agcrange", agcRangeSlider),
       automationAttachment(proc.apvts, "automation", automationToggle),
       riderAttachment(proc.apvts, "rider", riderToggle),
       clipGuardAttachment(proc.apvts, "clipguard", clipGuardToggle),
@@ -377,6 +378,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(sensCaption, "Sensibilidade");
     styleCaption(speedCaption, "Velocidade do rider");
     styleCaption(agcTimeCaption, "Tempo do AGC");
+    styleCaption(agcRangeCaption, utf8("Máx. do AGC"));
     styleCaption(meterCaption, "Entrada");
     styleCaption(outMeterCaption, utf8("Saída"));
     styleCaption(targetCaption, "Target");
@@ -438,6 +440,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
     styleCompactBar(speedSlider, " dB/s", (double) dsp::kProfiles[1].upDbPerS);
     styleCompactBar(agcTimeSlider, " s", (double) dsp::kAgcHoldS);
+    styleCompactBar(agcRangeSlider, " dB", (double) dsp::kAgcRangeDb);
 
     measureButton.onClick = [this]
     {
@@ -458,6 +461,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                          (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
                          (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
                          (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
+                         (juce::Component*) &agcRangeCaption, (juce::Component*) &agcRangeSlider,
                          (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
             c->setVisible(advancedOpen);
         resized();
@@ -474,7 +478,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &speedCaption, &speedSlider,
-             &agcTimeCaption, &agcTimeSlider, &meter, &outMeter, &meterCaption,
+             &agcTimeCaption, &agcTimeSlider, &agcRangeCaption, &agcRangeSlider, &meter,
+             &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &clipGuardToggle,
              &agcToggle, &panelToggle, &advancedButton, &measureButton })
@@ -485,6 +490,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                      (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
                      (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
                      (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
+                     (juce::Component*) &agcRangeCaption, (juce::Component*) &agcRangeSlider,
                      (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
         c->setVisible(false);
 }
@@ -548,8 +554,11 @@ void ChannelView::resized()
         speedSlider.setBounds(speedRow.removeFromLeft(100));
         card.removeFromTop(8);
         auto agcTimeRow = card.removeFromTop(26);
-        agcTimeCaption.setBounds(agcTimeRow.removeFromLeft(132));
-        agcTimeSlider.setBounds(agcTimeRow.removeFromLeft(100));
+        agcTimeCaption.setBounds(agcTimeRow.removeFromLeft(96));
+        agcTimeSlider.setBounds(agcTimeRow.removeFromLeft(92));
+        agcTimeRow.removeFromLeft(14);
+        agcRangeCaption.setBounds(agcTimeRow.removeFromLeft(88));
+        agcRangeSlider.setBounds(agcTimeRow.removeFromLeft(92));
         card.removeFromTop(8);
         auto toggleRow = card.removeFromTop(28);
         clipGuardToggle.setBounds(toggleRow.removeFromLeft(toggleRow.getWidth() / 2));

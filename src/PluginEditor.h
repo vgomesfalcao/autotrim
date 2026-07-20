@@ -80,13 +80,14 @@ private:
     juce::TextButton advancedButton;
 
     juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption, speedCaption,
-        agcTimeCaption, sectionLabel;
+        agcTimeCaption, agcRangeCaption, sectionLabel;
     juce::TextEditor nameEditor;
     juce::ComboBox presetBox, profileBox;
     MeterBar meter, outMeter;
     StatusStrip statusStrip;
     juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption;
-    juce::Slider targetSlider, trimSlider, sensSlider, speedSlider, agcTimeSlider;
+    juce::Slider targetSlider, trimSlider, sensSlider, speedSlider, agcTimeSlider,
+        agcRangeSlider;
     juce::TextButton measureButton { "Regular ganho" };
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
@@ -95,7 +96,7 @@ private:
         panelToggle { utf8("Usar esta instância como painel de controle") };
 
     juce::AudioProcessorValueTreeState::SliderAttachment targetAttachment, trimAttachment,
-        sensAttachment, speedAttachment, agcTimeAttachment;
+        sensAttachment, speedAttachment, agcTimeAttachment, agcRangeAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment automationAttachment, riderAttachment,
         clipGuardAttachment, agcAttachment;
     // Created after the box is populated (attachment applies the stored value).
