@@ -125,6 +125,32 @@ int main()
     CHECK(! agcCorrectionDb(-38.0f, 16.0f, -10.0f, 6.0f).has_value());
     CHECK(approx(*agcCorrectionDb(-30.0f, 16.0f, -10.0f, 6.0f), 4.0f));
 
+    // Gated hit average (drum measurement): bleed/ghost hits far below the
+    // strong ones never drag the level down; one freak rimshot never becomes
+    // the reference.
+    {
+        const float one[1] = { -12.0f };
+        CHECK(approx(gatedHitAverageDb(one, 1), -12.0f));
+        const float two[2] = { -8.0f, -9.0f };
+        CHECK(approx(gatedHitAverageDb(two, 2), -8.5f));
+        // Sparse toms: two direct hits + two bleed hits 15 dB down.
+        const float toms[4] = { -10.0f, -25.0f, -11.0f, -26.0f };
+        CHECK(approx(gatedHitAverageDb(toms, 4), -10.5f));
+        // Dense source where bleed is the majority: P90 reference holds.
+        float dense[50];
+        for (int i = 0; i < 20; ++i)
+            dense[i] = -10.0f;
+        for (int i = 20; i < 50; ++i)
+            dense[i] = -30.0f;
+        CHECK(approx(gatedHitAverageDb(dense, 50), -10.0f));
+        // One freak hot hit among 99 normal ones: everything is kept.
+        float freak[100];
+        freak[0] = 0.0f;
+        for (int i = 1; i < 100; ++i)
+            freak[i] = -12.0f;
+        CHECK(approx(gatedHitAverageDb(freak, 100), -11.88f));
+    }
+
     // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
     const float r = onepoleCoef(0.300f, 48000.0f);

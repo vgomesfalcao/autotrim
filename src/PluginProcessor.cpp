@@ -317,12 +317,13 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 {
                     inHit = false;
                     hitCooldownSamples = hitRetriggerSamples - hitWindowSamples;
-                    // Each hit's peak enters the running average that will
-                    // become the measured level.
-                    measSumDb += dsp::gainToDb(hitPeak);
+                    // Each hit's peak enters the gated average: hits far
+                    // below the strong ones (bleed, ghost notes) are dropped
+                    // so they never drag the measured level down.
+                    measHitsDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(hitPeak);
                     ++measCount;
-                    shared->measuredPeak.store(
-                        dsp::dbToGain(measSumDb / (float) measCount));
+                    shared->measuredPeak.store(dsp::dbToGain(dsp::gatedHitAverageDb(
+                        measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
                     shared->measHitCount.store((uint32_t) measCount);
                 }
             }

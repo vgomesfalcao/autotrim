@@ -57,6 +57,9 @@ private:
     int measCount = 0;
     float measSlotPeak = 0.0f;
     float measSlotElapsed = 0.0f;
+    // Drum hits captured during the window (ring; the gated average drops
+    // bleed/ghost notes).
+    float measHitsDb[512] = {};
     uint32_t measEpoch = 0;
     bool measStartedLocal = false;
     int measSamplesLeft = 0;

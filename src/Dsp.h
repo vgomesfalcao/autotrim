@@ -138,6 +138,43 @@ constexpr float kMeasArmTimeoutS = 90.0f;
 // average the peaks of every hit captured during the window.
 constexpr float kMeasSlotS = 0.5f;
 
+// Drum measurement: hits more than this far below the reference are bleed or
+// ghost notes, not direct hits — real strong hits of one drum cluster within
+// ~5-6 dB, while ghost notes sit 10-20 dB under the accents.
+constexpr float kMeasHitGateDb = 6.0f;
+constexpr int kMeasMaxHits = 512; // ring capacity (~30 s of 16th-note hi-hat)
+
+// Robust average of drum-hit peaks, BS.1770-style relative gating adapted to
+// hits: the reference is the P90 hit (dense sources — one freak rimshot can't
+// exclude everything, and majority bleed can't drag it), or the second
+// loudest for sparse sources like toms (the max when only 1-2 hits exist).
+// Hits below reference − kMeasHitGateDb are dropped; the result is the mean
+// dB of the survivors.
+inline float gatedHitAverageDb(const float* hitsDb, int count)
+{
+    if (count <= 0)
+        return -200.0f;
+    if (count == 1)
+        return hitsDb[0];
+
+    float sorted[kMeasMaxHits];
+    const int n = std::min(count, kMeasMaxHits);
+    std::copy(hitsDb, hitsDb + n, sorted);
+    std::sort(sorted, sorted + n, [](float a, float b) { return a > b; });
+
+    const float refDb = n >= 8 ? sorted[n / 10] : sorted[std::min(1, n - 1)];
+    const float gateDb = refDb - kMeasHitGateDb;
+
+    float sum = 0.0f;
+    int kept = 0;
+    for (int i = 0; i < n && sorted[i] >= gateDb; ++i)
+    {
+        sum += sorted[i];
+        ++kept;
+    }
+    return kept > 0 ? sum / (float) kept : refDb;
+}
+
 // Master loudness meter (panel instance): short-term LUFS per ITU-R BS.1770
 // (K-weighting + 3 s window), no gating (gating only applies to integrated).
 constexpr float kLufsTargetDb = -12.0f;
