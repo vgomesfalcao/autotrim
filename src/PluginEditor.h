@@ -86,11 +86,14 @@ private:
     juce::TextButton measureButton { "Regular ganho" };
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
+        clipGuardToggle { utf8("Clip Guard (corte anti-clip)") },
+        agcToggle { utf8("AGC (reajuste do trim)") },
         panelToggle { utf8("Usar esta instância como painel de controle") };
 
     juce::AudioProcessorValueTreeState::SliderAttachment targetAttachment, trimAttachment,
         sensAttachment;
-    juce::AudioProcessorValueTreeState::ButtonAttachment automationAttachment, riderAttachment;
+    juce::AudioProcessorValueTreeState::ButtonAttachment automationAttachment, riderAttachment,
+        clipGuardAttachment, agcAttachment;
     // Created after the box is populated (attachment applies the stored value).
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> profileAttachment;
 };

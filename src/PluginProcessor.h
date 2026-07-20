@@ -72,7 +72,17 @@ private:
     float sinceHitS = 1000.0f;
     float sinceCorrectionS = 1000.0f;
 
-    // Overload-protection state (output peaks above target + margin)
+    // AGC observation state: 3 s recent-peak ring evaluated at slot rate, plus
+    // the persistence evidence (deviation must hold for kAgcHoldS of program).
+    float agcWin[6] = {};
+    int agcWinIndex = 0;
+    float agcSlotPeak = 0.0f;
+    float agcSlotElapsed = 0.0f;
+    float agcDeviationS = 0.0f;
+    int agcDevSign = 0;
+    float agcEvidencePeakLin = 0.0f;
+
+    // Clip Guard state (output peaks above 0 dBFS)
     float protClockS = 0.0f;
     float protEventTimes[8] = {};
     int protEventIndex = 0;
@@ -91,6 +101,7 @@ private:
 
     void resetHitState();
     void resetProtectionWindow();
+    void resetAgcState();
     void analyzeLoudness(const juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AutoTrimProcessor)

@@ -256,7 +256,7 @@ void StatusStrip::paint(juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
 
-    // Overload protection engaged: red badge, impossible to miss.
+    // Clip Guard engaged: red badge, impossible to miss.
     if (protect < -0.05f)
     {
         auto badge = r.removeFromRight(118.0f);
@@ -265,7 +265,7 @@ void StatusStrip::paint(juce::Graphics& g)
         g.setColour(colours::meterHigh);
         g.drawRoundedRectangle(badge.reduced(0.5f), 8.0f, 1.0f);
         g.setFont(juce::Font(juce::FontOptions(13.5f, juce::Font::bold)));
-        g.drawText(utf8("PROT ") + formatDb(protect), badge.reduced(8.0f, 0.0f),
+        g.drawText(utf8("CLIP ") + formatDb(protect), badge.reduced(8.0f, 0.0f),
                    juce::Justification::centred);
         r.removeFromRight(10.0f);
     }
@@ -329,7 +329,9 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
       trimAttachment(proc.apvts, "trim", trimSlider),
       sensAttachment(proc.apvts, "sens", sensSlider),
       automationAttachment(proc.apvts, "automation", automationToggle),
-      riderAttachment(proc.apvts, "rider", riderToggle)
+      riderAttachment(proc.apvts, "rider", riderToggle),
+      clipGuardAttachment(proc.apvts, "clipguard", clipGuardToggle),
+      agcAttachment(proc.apvts, "agc", agcToggle)
 {
     styleTitle(title, "AutoTrim");
     styleCaption(nameCaption, "Nome do canal");
@@ -409,7 +411,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
         advancedOpen = ! advancedOpen;
         advancedButton.setButtonText(advancedOpen ? utf8("▾  Avançado") : utf8("▸  Avançado"));
         for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
-                         (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
+                         (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
+                         (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
             c->setVisible(advancedOpen);
         resized();
         repaint();
@@ -426,13 +429,14 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
              &profileBox, &sensCaption, &sensSlider, &meter, &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
-             &targetSlider, &trimSlider, &automationToggle, &riderToggle, &panelToggle,
-             &advancedButton, &measureButton })
+             &targetSlider, &trimSlider, &automationToggle, &riderToggle, &clipGuardToggle,
+             &agcToggle, &panelToggle, &advancedButton, &measureButton })
         addAndMakeVisible(c);
 
     // "Avançado" starts collapsed.
     for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
-                     (juce::Component*) &sensCaption, (juce::Component*) &sensSlider })
+                     (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
+                     (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
         c->setVisible(false);
 }
 
@@ -461,8 +465,8 @@ void ChannelView::resized()
     measureButton.setBounds(r.removeFromTop(34));
     r.removeFromTop(14);
 
-    // Set-once configuration card ("Avançado" adds a collapsed row)
-    configCard = r.removeFromTop(advancedOpen ? 278 : 242);
+    // Set-once configuration card ("Avançado" adds two collapsed rows)
+    configCard = r.removeFromTop(advancedOpen ? 314 : 242);
     auto card = configCard.reduced(16, 14);
     sectionLabel.setBounds(card.removeFromTop(18));
     card.removeFromTop(12);
@@ -489,6 +493,10 @@ void ChannelView::resized()
         compactRow.removeFromLeft(20);
         sensCaption.setBounds(compactRow.removeFromLeft(96));
         sensSlider.setBounds(compactRow.removeFromLeft(100));
+        card.removeFromTop(8);
+        auto toggleRow = card.removeFromTop(28);
+        clipGuardToggle.setBounds(toggleRow.removeFromLeft(toggleRow.getWidth() / 2));
+        agcToggle.setBounds(toggleRow);
     }
     r.removeFromTop(14);
 
@@ -506,7 +514,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 382 + (advancedOpen ? 278 : 242);
+    return 382 + (advancedOpen ? 314 : 242);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -674,7 +682,7 @@ void PanelRow::refresh()
     }
     else if (shared->protectionActive.load())
     {
-        statusLabel.setText(utf8("PROT ") + formatDb(shared->protectOffsetDb.load()),
+        statusLabel.setText(utf8("CLIP ") + formatDb(shared->protectOffsetDb.load()),
                             juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::meterHigh);
     }
@@ -1017,6 +1025,10 @@ AutoTrimEditor::ViewMode AutoTrimEditor::currentMode() const
 
 void AutoTrimEditor::timerCallback()
 {
+    // Pending AGC re-trims become part of the Ganho parameter here, so the
+    // readout always tells the truth about the applied gain.
+    registry::foldAgcRetrims();
+
     if (currentMode() != viewMode)
         rebuildView();
 

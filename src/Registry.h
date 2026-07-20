@@ -36,7 +36,8 @@ struct ChannelShared
     std::atomic<float> lufsShort { -100.0f };  // panel instance only (master mix)
     std::atomic<float> measuredPeak { 0.0f };  // linear, max during measurement
     std::atomic<float> riderOffsetDb { 0.0f };   // continuous-mode correction
-    std::atomic<float> protectOffsetDb { 0.0f }; // overload-protection cut (<= 0)
+    std::atomic<float> agcOffsetDb { 0.0f };     // slow AGC re-trim offset
+    std::atomic<float> protectOffsetDb { 0.0f }; // Clip Guard cut (<= 0)
     std::atomic<bool> protectionActive { false };
     std::atomic<bool> panelMode { false };
     std::atomic<bool> panelCompact { false };
@@ -57,6 +58,8 @@ struct ChannelShared
     std::atomic<float>* trimDb = nullptr;
     std::atomic<float>* automationOn = nullptr;
     std::atomic<float>* riderOn = nullptr;
+    std::atomic<float>* agcOn = nullptr;       // slow re-trim mode (off by default)
+    std::atomic<float>* clipGuardOn = nullptr; // anti-clip protection (on by default)
     std::atomic<float>* profile = nullptr;     // index into dsp::kProfiles
     std::atomic<float>* sensitivityDb = nullptr;
 
@@ -72,7 +75,7 @@ struct ChannelShared
     float effectiveTrimDb() const
     {
         return (trimDb != nullptr ? trimDb->load() : 0.0f) + riderOffsetDb.load()
-               + protectOffsetDb.load();
+               + agcOffsetDb.load() + protectOffsetDb.load();
     }
 };
 
@@ -86,5 +89,11 @@ namespace registry
     // Session-wide settings owned by the panel instance.
     extern std::atomic<float> maxTrimDb;
     extern std::atomic<float> measDurationS;
+
+    // Folds pending AGC re-trims into each channel's trim parameter so the
+    // Ganho readout stays the source of truth. Message thread only (called
+    // from the editor timers); the audio thread keeps applying the offset
+    // until it is folded, so nothing depends on a window being open.
+    void foldAgcRetrims();
 } // namespace registry
 } // namespace autotrim

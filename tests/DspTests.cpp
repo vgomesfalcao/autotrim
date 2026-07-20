@@ -103,6 +103,17 @@ int main()
     CHECK(! voice.hitBased && ! instrument.hitBased);
     CHECK(approx(riderOffsetStep(0.0f, -20.0f, 0.0f, -6.0f, drums, 10.0f), drums.rideRangeDb));
 
+    // AGC re-trim correction: nothing within the tolerance, the full error
+    // (clamped to the range) beyond it, and a pause-like drop is never
+    // mistaken for a program change.
+    CHECK(! agcCorrectionDb(-26.0f, 16.0f, -10.0f).has_value()); // on target
+    CHECK(! agcCorrectionDb(-28.0f, 16.0f, -10.0f).has_value()); // within ±3
+    CHECK(approx(*agcCorrectionDb(-32.0f, 16.0f, -10.0f), 6.0f));  // got 6 dB quieter
+    CHECK(approx(*agcCorrectionDb(-20.0f, 16.0f, -10.0f), -6.0f)); // got 6 dB louder
+    CHECK(! agcCorrectionDb(-60.0f, 16.0f, -10.0f).has_value()); // pause/bleed: hold
+    CHECK(approx(*agcCorrectionDb(-2.0f, 16.0f, -10.0f), -kAgcRangeDb)); // clamped cut
+    CHECK(approx(*agcCorrectionDb(-40.0f, 16.0f, -10.0f), kAgcRangeDb)); // clamped boost
+
     // Envelope attacks faster than it releases
     const float a = onepoleCoef(kEnvAttackS, 48000.0f);
     const float r = onepoleCoef(0.300f, 48000.0f);

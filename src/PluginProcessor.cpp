@@ -23,6 +23,14 @@ namespace
             ParameterID { "automation", 1 }, utf8("Automação"), true));
         layout.add(std::make_unique<AudioParameterBool>(
             ParameterID { "rider", 1 }, utf8("Modo contínuo"), false));
+        // AGC: slow re-trim on sustained program-level changes. Works well for
+        // some sources only, so it ships off.
+        layout.add(std::make_unique<AudioParameterBool>(
+            ParameterID { "agc", 1 }, "AGC", false));
+        // Clip Guard: the emergency cut on real clipping (> 0 dBFS). On by
+        // default; the toggle lives in the Avançado section.
+        layout.add(std::make_unique<AudioParameterBool>(
+            ParameterID { "clipguard", 1 }, "Clip Guard", true));
         layout.add(std::make_unique<AudioParameterChoice>(
             ParameterID { "profile", 1 }, "Perfil",
             StringArray { "Voz", "Instrumento", "Bateria" }, 1));
@@ -46,6 +54,8 @@ AutoTrimProcessor::AutoTrimProcessor()
     shared->trimDb = apvts.getRawParameterValue("trim");
     shared->automationOn = apvts.getRawParameterValue("automation");
     shared->riderOn = apvts.getRawParameterValue("rider");
+    shared->agcOn = apvts.getRawParameterValue("agc");
+    shared->clipGuardOn = apvts.getRawParameterValue("clipguard");
     shared->profile = apvts.getRawParameterValue("profile");
     shared->sensitivityDb = apvts.getRawParameterValue("sens");
     shared->targetParam = apvts.getParameter("target");
@@ -69,6 +79,7 @@ void AutoTrimProcessor::prepareToPlay(double sampleRate, int)
     hitRetriggerSamples = juce::jmax(1, (int) (dsp::kHitRetriggerS * sr));
     gainLin = dsp::dbToGain(shared->effectiveTrimDb());
     resetHitState();
+    resetAgcState();
 
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -155,6 +166,18 @@ void AutoTrimProcessor::resetProtectionWindow()
     protOffenderMaxLin = 0.0f;
 }
 
+void AutoTrimProcessor::resetAgcState()
+{
+    for (auto& slot : agcWin)
+        slot = 0.0f;
+    agcWinIndex = 0;
+    agcSlotPeak = 0.0f;
+    agcSlotElapsed = 0.0f;
+    agcDeviationS = 0.0f;
+    agcDevSign = 0;
+    agcEvidencePeakLin = 0.0f;
+}
+
 bool AutoTrimProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     const auto& in = layouts.getMainInputChannelSet();
@@ -189,6 +212,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         gainLin = 1.0f;
         if (shared->riderOffsetDb.load() != 0.0f)
             shared->riderOffsetDb.store(0.0f);
+        if (shared->agcOffsetDb.load() != 0.0f)
+            shared->agcOffsetDb.store(0.0f);
         if (shared->protectOffsetDb.load() != 0.0f || shared->protectionActive.load())
         {
             shared->protectOffsetDb.store(0.0f);
@@ -202,6 +227,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float maxTrim = registry::maxTrimDb.load();
     const bool automationOn = shared->isAutomationOn();
     const bool riderOn = automationOn && shared->riderOn->load() > 0.5f;
+    const bool agcOn = automationOn && shared->agcOn->load() > 0.5f;
+    const bool clipGuardOn = automationOn && shared->clipGuardOn->load() > 0.5f;
     const bool measuring = shared->measuring.load();
     const float trimDb = shared->trimDb->load();
     const auto& profile = dsp::profileFor((int) shared->profile->load());
@@ -219,8 +246,9 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     bool hitCompleted = false;
 
     float offsetDb = shared->riderOffsetDb.load();
+    const float agcDb = shared->agcOffsetDb.load();
     const float protectDb = shared->protectOffsetDb.load();
-    float totalDb = juce::jlimit(-maxTrim, maxTrim, trimDb + offsetDb + protectDb);
+    float totalDb = juce::jlimit(-maxTrim, maxTrim, trimDb + offsetDb + agcDb + protectDb);
     const float targetGain = automationOn ? dsp::dbToGain(totalDb) : 1.0f;
 
     auto* const* channelData = buffer.getArrayOfWritePointers();
@@ -317,16 +345,17 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         measHitsCaptured = 0;
         inHit = false;
         hitCooldownSamples = 0;
+        // A fresh measurement recalibrates the trim: AGC evidence restarts.
+        resetAgcState();
     }
-    // Overload protection: if the *output* peaks past target + margin too
-    // many times inside the window, cut the trim to protect the downstream
-    // chain — regardless of the rider being on. A sustained overload re-arms
-    // one event per rearm period so it is caught too.
-    if (automationOn && ! measuring)
+    // Clip Guard: if the *output* peaks past 0 dBFS (real clipping) too many
+    // times inside the window, cut the trim to protect the downstream chain —
+    // regardless of the rider being on. A sustained overload re-arms one
+    // event per rearm period so it is caught too.
+    if (clipGuardOn && ! measuring)
     {
         protClockS += dt;
-        const float overThresholdLin =
-            dsp::dbToGain(shared->targetDb->load() + dsp::kProtectMarginDb);
+        const float overThresholdLin = dsp::dbToGain(dsp::kClipThresholdDb);
         if (blockPeakPost > overThresholdLin)
         {
             protSinceOverS = 0.0f;
@@ -379,8 +408,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         if (protectDb < 0.0f && protSinceOverS > dsp::kProtectHoldS)
         {
             const float recentOutDb = dsp::gainToDb(shared->peakPostTrim.load());
-            const float thresholdDb = shared->targetDb->load() + dsp::kProtectMarginDb;
-            if (recentOutDb + 1.0f <= thresholdDb)
+            if (recentOutDb + 1.0f <= dsp::kClipThresholdDb)
             {
                 const float released =
                     juce::jmin(0.0f, protectDb + dsp::kProtectReleaseDbPerS * dt);
@@ -395,6 +423,15 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 }
             }
         }
+    }
+
+    // Clip Guard off: a residual protective cut must not keep acting.
+    if (! clipGuardOn
+        && (shared->protectOffsetDb.load() != 0.0f || shared->protectionActive.load()))
+    {
+        shared->protectOffsetDb.store(0.0f);
+        shared->protectionActive.store(false);
+        resetProtectionWindow();
     }
 
     // A stale rider correction must not keep acting after the mode is off.
@@ -502,6 +539,78 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
         if (newOffset != offsetDb)
             shared->riderOffsetDb.store(newOffset);
+    }
+
+    // AGC: observes all the time — slots whose recent peak sits below the
+    // channel sensitivity are background noise/pauses and merely *hold* the
+    // evidence — and when the program level stays shifted from the target for
+    // the full hold period, it corrects the previously measured trim in one
+    // step, like a re-measurement (not a rider). The correction lands in
+    // agcOffsetDb (applied immediately, click-free via the gain smoother) and
+    // the message thread folds it into the trim parameter.
+    if (! agcOn)
+    {
+        if (agcDb != 0.0f)
+            shared->agcOffsetDb.store(0.0f);
+        if (agcDevSign != 0 || agcDeviationS != 0.0f)
+            resetAgcState();
+    }
+    else if (! measuring)
+    {
+        agcSlotPeak = juce::jmax(agcSlotPeak, blockPeak);
+        agcSlotElapsed += dt;
+        while (agcSlotElapsed >= dsp::kAgcSlotS)
+        {
+            agcSlotElapsed -= dsp::kAgcSlotS;
+            agcWinIndex = (agcWinIndex + 1) % dsp::kAgcWinSlots;
+            agcWin[agcWinIndex] = agcSlotPeak;
+            agcSlotPeak = 0.0f;
+
+            float winMax = 0.0f;
+            for (float slot : agcWin)
+                winMax = juce::jmax(winMax, slot);
+            const float winMaxDb = dsp::gainToDb(winMax);
+            if (winMaxDb < sensDb)
+                continue; // noise floor: not evidence for or against
+
+            const float target = shared->targetDb->load();
+            const float appliedDb =
+                trimDb + shared->riderOffsetDb.load() + agcDb + protectDb;
+            const auto slotCorr = dsp::agcCorrectionDb(winMaxDb, appliedDb, target);
+            if (! slotCorr)
+            {
+                // Back within tolerance restarts the evidence; a pause-like
+                // drop (too far below the program) just holds it.
+                const float error = target - (winMaxDb + appliedDb);
+                if (std::abs(error) <= dsp::kAgcToleranceDb)
+                {
+                    agcDeviationS = 0.0f;
+                    agcDevSign = 0;
+                    agcEvidencePeakLin = 0.0f;
+                }
+                continue;
+            }
+
+            const int sign = *slotCorr > 0.0f ? 1 : -1;
+            if (sign != agcDevSign)
+            {
+                agcDevSign = sign;
+                agcDeviationS = 0.0f;
+                agcEvidencePeakLin = 0.0f;
+            }
+            agcDeviationS += dsp::kAgcSlotS;
+            agcEvidencePeakLin = juce::jmax(agcEvidencePeakLin, winMax);
+            if (agcDeviationS >= dsp::kAgcHoldS)
+            {
+                if (auto corr = dsp::agcCorrectionDb(dsp::gainToDb(agcEvidencePeakLin),
+                                                     appliedDb, target))
+                    shared->agcOffsetDb.store(juce::jlimit(
+                        -dsp::kAgcRangeDb, dsp::kAgcRangeDb, agcDb + *corr));
+                agcDeviationS = 0.0f;
+                agcDevSign = 0;
+                agcEvidencePeakLin = 0.0f;
+            }
+        }
     }
 }
 

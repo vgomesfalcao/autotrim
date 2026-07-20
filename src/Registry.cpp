@@ -53,6 +53,25 @@ namespace registry
         list.erase(std::remove(list.begin(), list.end(), shared), list.end());
     }
 
+    void foldAgcRetrims()
+    {
+        for (auto& ch : channels())
+        {
+            const float agc = ch->agcOffsetDb.load();
+            if (std::abs(agc) < 0.05f || ch->trimParam == nullptr || ch->trimDb == nullptr)
+                continue;
+            const float maxTrim = maxTrimDb.load();
+            const float newTrim =
+                juce::jlimit(-maxTrim, maxTrim, ch->trimDb->load() + agc);
+            // Zero the offset first: one block may briefly under-apply, which
+            // the gain smoother swallows (the reverse order would double-count).
+            ch->agcOffsetDb.store(0.0f);
+            ch->trimParam->beginChangeGesture();
+            ch->trimParam->setValueNotifyingHost(ch->trimParam->convertTo0to1(newTrim));
+            ch->trimParam->endChangeGesture();
+        }
+    }
+
     std::vector<std::shared_ptr<ChannelShared>> channels()
     {
         const juce::ScopedLock lock(registryLock());

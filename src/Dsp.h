@@ -12,7 +12,7 @@ namespace autotrim::dsp
 constexpr float kGateDb = -60.0f;
 constexpr float kDefaultTargetDb = -10.0f;
 constexpr float kDefaultMaxTrimDb = 36.0f;
-constexpr float kDefaultMeasDurationS = 10.0f;
+constexpr float kDefaultMeasDurationS = 6.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
 // within this range. Weak sources can need +40 dB or more of make-up.
 constexpr float kTrimParamRangeDb = 60.0f;
@@ -60,10 +60,11 @@ inline const RiderProfile& profileFor(int index)
     return kProfiles[std::clamp(index, 0, kNumProfiles - 1)];
 }
 
-// Overload protection: if output peaks exceed target by more than the margin
-// this many times inside the window, the trim is cut automatically (even with
-// the rider off) to protect the downstream plugin chain. Shown in red.
-constexpr float kProtectMarginDb = 3.0f;
+// Clip Guard: if output peaks exceed 0 dBFS (real digital clipping — not a
+// margin over the target) this many times inside the window, the trim is cut
+// automatically (even with the rider off) to protect the downstream chain.
+// Shown in red; can be disabled per channel (on by default).
+constexpr float kClipThresholdDb = 0.0f;
 constexpr int kProtectHitCount = 5;
 constexpr float kProtectWindowS = 3.0f;
 constexpr float kProtectMaxCutDb = 12.0f;
@@ -73,6 +74,38 @@ constexpr float kProtectRearmS = 0.3f;
 // headroom, it glides back to zero at the release rate.
 constexpr float kProtectHoldS = 5.0f;
 constexpr float kProtectReleaseDbPerS = 0.5f;
+
+// AGC (automatic gain control): re-trim on *permanent* program-level changes
+// (a new song, a timbre change mid-song). It watches a sliding recent-peak
+// window all the time, ignores anything below the channel sensitivity
+// (background noise / bleed), and only when the deviation from the target
+// persists for the full hold period it corrects the previously measured trim
+// in one step — like a re-measurement, not a rider. Off by default (works
+// well for some sources, not all).
+constexpr float kAgcSlotS = 0.5f;
+constexpr int kAgcWinSlots = 6;      // 3 s recent-peak window (syllable gaps)
+constexpr float kAgcToleranceDb = 3.0f;
+constexpr float kAgcHoldS = 20.0f;   // deviation must persist this long
+constexpr float kAgcRangeDb = 12.0f; // max correction per re-trim
+// Like the rider's pause margin: a level *this* far below where the program
+// should sit is a pause or bleed, never "the song got quieter".
+constexpr float kAgcPauseMarginDb = 3.0f;
+
+// The correction one AGC re-trim applies, from the peak observed over the
+// evidence period (the same formula a re-measurement would use). otherGainDb
+// is everything currently applied (trim + rider + protection). Empty while
+// the level is close enough to the target, or when the deviation looks like
+// a pause/bleed rather than a program change.
+inline std::optional<float> agcCorrectionDb(float evidencePeakDb, float otherGainDb,
+                                            float targetDb)
+{
+    const float error = targetDb - (evidencePeakDb + otherGainDb);
+    if (std::abs(error) <= kAgcToleranceDb)
+        return std::nullopt;
+    if (error > kAgcRangeDb + kAgcPauseMarginDb)
+        return std::nullopt;
+    return std::clamp(error, -kAgcRangeDb, kAgcRangeDb);
+}
 
 // Armed measurement: the window only starts counting when the channel first
 // sees signal above the gate (isolated sources like toms play at arbitrary
