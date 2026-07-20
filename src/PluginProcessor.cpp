@@ -27,6 +27,10 @@ namespace
         // some sources only, so it ships off.
         layout.add(std::make_unique<AudioParameterBool>(
             ParameterID { "agc", 1 }, "AGC", false));
+        layout.add(std::make_unique<AudioParameterFloat>(
+            ParameterID { "agctime", 1 }, "Tempo do AGC",
+            NormalisableRange<float>(dsp::kAgcHoldMinS, dsp::kAgcHoldMaxS, 1.0f),
+            dsp::kAgcHoldS, AudioParameterFloatAttributes().withLabel("s")));
         // Clip Guard: the emergency cut on real clipping (> 0 dBFS). On by
         // default; the toggle lives in the Avançado section.
         layout.add(std::make_unique<AudioParameterBool>(
@@ -62,6 +66,7 @@ AutoTrimProcessor::AutoTrimProcessor()
     shared->automationOn = apvts.getRawParameterValue("automation");
     shared->riderOn = apvts.getRawParameterValue("rider");
     shared->agcOn = apvts.getRawParameterValue("agc");
+    shared->agcHoldS = apvts.getRawParameterValue("agctime");
     shared->clipGuardOn = apvts.getRawParameterValue("clipguard");
     shared->profile = apvts.getRawParameterValue("profile");
     shared->sensitivityDb = apvts.getRawParameterValue("sens");
@@ -619,7 +624,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             }
             agcDeviationS += dsp::kAgcSlotS;
             agcEvidencePeakLin = juce::jmax(agcEvidencePeakLin, winMax);
-            if (agcDeviationS >= dsp::kAgcHoldS)
+            if (agcDeviationS >= shared->agcHoldS->load())
             {
                 if (auto corr = dsp::agcCorrectionDb(dsp::gainToDb(agcEvidencePeakLin),
                                                      appliedDb, target))

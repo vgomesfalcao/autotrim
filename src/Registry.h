@@ -59,6 +59,7 @@ struct ChannelShared
     std::atomic<float>* automationOn = nullptr;
     std::atomic<float>* riderOn = nullptr;
     std::atomic<float>* agcOn = nullptr;       // slow re-trim mode (off by default)
+    std::atomic<float>* agcHoldS = nullptr;    // persistence before a re-trim
     std::atomic<float>* clipGuardOn = nullptr; // anti-clip protection (on by default)
     std::atomic<float>* profile = nullptr;     // index into dsp::kProfiles
     std::atomic<float>* sensitivityDb = nullptr;

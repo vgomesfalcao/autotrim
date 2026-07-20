@@ -12,7 +12,7 @@ namespace autotrim::dsp
 constexpr float kGateDb = -60.0f;
 constexpr float kDefaultTargetDb = -10.0f;
 constexpr float kDefaultMaxTrimDb = 36.0f;
-constexpr float kDefaultMeasDurationS = 6.0f;
+constexpr float kDefaultMeasDurationS = 4.0f;
 // Hard limit of the trim host parameter; the panel's editable clamp acts
 // within this range. Weak sources can need +40 dB or more of make-up.
 constexpr float kTrimParamRangeDb = 60.0f;
@@ -95,7 +95,10 @@ constexpr float kProtectReleaseDbPerS = 0.5f;
 constexpr float kAgcSlotS = 0.5f;
 constexpr int kAgcWinSlots = 6;      // 3 s recent-peak window (syllable gaps)
 constexpr float kAgcToleranceDb = 3.0f;
-constexpr float kAgcHoldS = 20.0f;   // deviation must persist this long
+// Default persistence before a re-trim fires; editable per channel.
+constexpr float kAgcHoldS = 7.0f;
+constexpr float kAgcHoldMinS = 3.0f;
+constexpr float kAgcHoldMaxS = 60.0f;
 constexpr float kAgcRangeDb = 12.0f; // max correction per re-trim
 // Like the rider's pause margin: a level *this* far below where the program
 // should sit is a pause or bleed, never "the song got quieter".

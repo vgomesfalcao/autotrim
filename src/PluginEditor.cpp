@@ -329,6 +329,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
       trimAttachment(proc.apvts, "trim", trimSlider),
       sensAttachment(proc.apvts, "sens", sensSlider),
       speedAttachment(proc.apvts, "speed", speedSlider),
+      agcTimeAttachment(proc.apvts, "agctime", agcTimeSlider),
       automationAttachment(proc.apvts, "automation", automationToggle),
       riderAttachment(proc.apvts, "rider", riderToggle),
       clipGuardAttachment(proc.apvts, "clipguard", clipGuardToggle),
@@ -340,6 +341,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCaption(profileCaption, "Perfil do rider");
     styleCaption(sensCaption, "Sensibilidade");
     styleCaption(speedCaption, "Velocidade do rider");
+    styleCaption(agcTimeCaption, "Tempo do AGC");
     styleCaption(meterCaption, "Entrada");
     styleCaption(outMeterCaption, utf8("Saída"));
     styleCaption(targetCaption, "Target");
@@ -400,6 +402,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     styleCompactBar(targetSlider, " dBFS", (double) dsp::kDefaultTargetDb);
     styleCompactBar(sensSlider, " dBFS", (double) dsp::kProfiles[1].sensitivityDb);
     styleCompactBar(speedSlider, " dB/s", (double) dsp::kProfiles[1].upDbPerS);
+    styleCompactBar(agcTimeSlider, " s", (double) dsp::kAgcHoldS);
 
     measureButton.onClick = [this]
     {
@@ -419,6 +422,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
         for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
                          (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
                          (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
+                         (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
                          (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
             c->setVisible(advancedOpen);
         resized();
@@ -434,8 +438,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
 
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &nameCaption, &nameEditor, &presetCaption, &presetBox, &profileCaption,
-             &profileBox, &sensCaption, &sensSlider, &speedCaption, &speedSlider, &meter,
-             &outMeter, &meterCaption,
+             &profileBox, &sensCaption, &sensSlider, &speedCaption, &speedSlider,
+             &agcTimeCaption, &agcTimeSlider, &meter, &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &clipGuardToggle,
              &agcToggle, &panelToggle, &advancedButton, &measureButton })
@@ -445,6 +449,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
                      (juce::Component*) &sensCaption, (juce::Component*) &sensSlider,
                      (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
+                     (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
                      (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
         c->setVisible(false);
 }
@@ -474,8 +479,8 @@ void ChannelView::resized()
     measureButton.setBounds(r.removeFromTop(34));
     r.removeFromTop(14);
 
-    // Set-once configuration card ("Avançado" adds three collapsed rows)
-    configCard = r.removeFromTop(advancedOpen ? 348 : 242);
+    // Set-once configuration card ("Avançado" adds four collapsed rows)
+    configCard = r.removeFromTop(advancedOpen ? 382 : 242);
     auto card = configCard.reduced(16, 14);
     sectionLabel.setBounds(card.removeFromTop(18));
     card.removeFromTop(12);
@@ -507,6 +512,10 @@ void ChannelView::resized()
         speedCaption.setBounds(speedRow.removeFromLeft(132));
         speedSlider.setBounds(speedRow.removeFromLeft(100));
         card.removeFromTop(8);
+        auto agcTimeRow = card.removeFromTop(26);
+        agcTimeCaption.setBounds(agcTimeRow.removeFromLeft(132));
+        agcTimeSlider.setBounds(agcTimeRow.removeFromLeft(100));
+        card.removeFromTop(8);
         auto toggleRow = card.removeFromTop(28);
         clipGuardToggle.setBounds(toggleRow.removeFromLeft(toggleRow.getWidth() / 2));
         agcToggle.setBounds(toggleRow);
@@ -527,7 +536,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 382 + (advancedOpen ? 348 : 242);
+    return 382 + (advancedOpen ? 382 : 242);
 }
 
 void ChannelView::paint(juce::Graphics& g)
