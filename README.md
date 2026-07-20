@@ -11,11 +11,13 @@ Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o
 - Canal com pico abaixo de **-60 dBFS** durante a medição é marcado **"sem sinal"** e ignorado.
 - O **rider** (modo contínuo, por canal) mantém o nível no target com **perfis por tipo de fonte** — o preset pré-seleciona o perfil, mas você pode trocá-lo livremente no dropdown "Perfil do rider":
 
-| Perfil | Detector | Sobe / Desce | Ride | Sensibilidade padrão | Retorno em pausa |
+| Perfil | Detector | Sobe / Desce (padrão) | Ride | Sensibilidade padrão | Retorno em pausa |
 |---|---|---|---|---|---|
-| **Voz** | pico com hold deslizante de 2.5 s | 2 / 6 dB/s | ±6 dB | -45 dBFS | 2 dB/s |
+| **Voz** | pico com hold deslizante de 2.5 s | 2.5 / 6 dB/s | ±6 dB | -45 dBFS | 2 dB/s |
 | **Instrumento** | pico com hold deslizante de 3 s | 1.5 / 6 dB/s | ±4 dB | -50 dBFS | 1 dB/s |
-| **Bateria** | média dos picos das últimas 8 batidas (janela 50 ms, retrigger 100 ms) | 1.5 / 4 dB/s | ±4 dB | -40 dBFS | 0.5 dB/s |
+| **Bateria** | média dos picos das últimas 8 batidas (janela 50 ms, retrigger 100 ms) | 4 / 8 dB/s | ±4 dB | -40 dBFS | 0.5 dB/s |
+
+  - A **Velocidade** do rider (taxa de subida, em dB/s) é editável em **Avançado** (0.5–15 dB/s); a descida mantém a proporção do perfil (atenuar é sempre mais rápido que subir). Os padrões seguem as referências profissionais: Voz em nível de frase (Vocal Rider "Slow" ≈ 1.5–3 dB/s), Instrumento nota a nota (Bass Rider segura o ganho dentro da nota), Bateria rápida para convergir em poucas batidas (Drum Leveler salta para o novo ganho a cada hit). Trocar o perfil (ou aplicar um preset) restaura a velocidade padrão dele.
 
   - O ride é um **offset limitado em volta do trim medido** (não mexe no parâmetro Trim) — segurança contra o ganho fugir do calibrado.
   - **Sensibilidade** (por canal): abaixo dela o rider não persegue ruído/vazamento; o offset desliza de volta ao trim medido. Trocar o perfil restaura a sensibilidade padrão dele.
@@ -24,9 +26,9 @@ Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o
 
 - **Clip Guard** (ligado por padrão; desligável em Avançado): se a saída passar de **0 dBFS** (clip digital real) **5 vezes em 3 segundos** (overload contínuo conta 1 evento a cada 300 ms), o plugin corta automaticamente um offset de trim para trazer o pior pico de volta ao target (corte máximo −12 dB). O ajuste aparece **em vermelho** (badge `CLIP` no canal, status no painel, nome em vermelho no modo compacto). O corte é **temporário**: após 5 s sem picos acima de 0 dBFS e com folga no sinal, ele devolve o ganho a 0.5 dB/s até zerar (sinal quente voltando reativa o corte). Uma nova medição também zera o corte.
 
-- **AGC** (desligado por padrão; ativável em Avançado — funciona bem para algumas fontes, não todas): fica **observando o tempo todo** o pico recente do canal, ignorando o que está abaixo da Sensibilidade (ruído de fundo/vazamento). Quando percebe que o nível do programa **mudou de forma permanente** — ficou mais de 3 dB fora do target por **20 segundos** de programa (troca de música, timbre que mudou no meio da música) — ele **corrige o trim medido anteriormente** em um passo, como uma re-medição (correção máxima ±12 dB por vez). Não é um rider: nada acontece em pausas, viradas ou variações momentâneas.
+- **AGC** (desligado por padrão; ativável em Avançado — funciona bem para algumas fontes, não todas): fica **observando o tempo todo** o pico recente do canal, ignorando o que está abaixo da Sensibilidade (ruído de fundo/vazamento). Quando percebe que o nível do programa **mudou de forma permanente** — ficou mais de 3 dB fora do target por **20 segundos** de programa (troca de música, timbre que mudou no meio da música) — ele **corrige o ganho medido anteriormente** em um passo, como uma re-medição (correção máxima ±12 dB por vez). A avaliação é **pré-rider**: o AGC julga só a calibração base (Ganho), então uma correção temporária do rider nunca mascara a mudança permanente — e no momento do re-trim o offset do rider é descontado na mesma proporção, sem salto no volume. Não é um rider: nada acontece em pausas, viradas ou variações momentâneas.
 
-- **Avançado** (seção fechada por padrão no plugin do canal) concentra o que não é do dia a dia: **Target**, **Sensibilidade**, e os toggles **Clip Guard** e **AGC**. As demais funções automáticas já têm interruptor próprio no card principal: **Automação** (desliga tudo — o plugin vira passthrough) e **Rider**. Medição só acontece quando você pede (botão), então não tem toggle.
+- **Avançado** (seção fechada por padrão no plugin do canal) concentra o que não é do dia a dia: **Target**, **Sensibilidade**, **Velocidade do rider** e os toggles **Clip Guard** e **AGC**. As demais funções automáticas já têm interruptor próprio no card principal: **Automação** (desliga tudo — o plugin vira passthrough) e **Rider**. Medição só acontece quando você pede (botão), então não tem toggle.
 
 Target, trim, automação, rider, AGC e Clip Guard são **parâmetros do host** (automatizáveis e salvos na sessão); nome, modo painel e as configurações globais do painel também são salvos.
 

@@ -66,6 +66,16 @@ namespace registry
             // Zero the offset first: one block may briefly under-apply, which
             // the gain smoother swallows (the reverse order would double-count).
             ch->agcOffsetDb.store(0.0f);
+            // If the rider was compensating the same shift, hand the work
+            // over: pre-discount the correction from its offset so the total
+            // gain doesn't jump at the re-trim (the rider re-centers from
+            // there on its own).
+            const float range =
+                dsp::profileFor(ch->profile != nullptr ? (int) ch->profile->load() : 1)
+                    .rideRangeDb;
+            const float rider = ch->riderOffsetDb.load();
+            if (rider != 0.0f)
+                ch->riderOffsetDb.store(juce::jlimit(-range, range, rider - agc));
             ch->trimParam->beginChangeGesture();
             ch->trimParam->setValueNotifyingHost(ch->trimParam->convertTo0to1(newTrim));
             ch->trimParam->endChangeGesture();

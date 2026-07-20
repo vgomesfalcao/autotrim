@@ -62,6 +62,7 @@ struct ChannelShared
     std::atomic<float>* clipGuardOn = nullptr; // anti-clip protection (on by default)
     std::atomic<float>* profile = nullptr;     // index into dsp::kProfiles
     std::atomic<float>* sensitivityDb = nullptr;
+    std::atomic<float>* speedDbPerS = nullptr; // rider ride-up rate
 
     // Parameter objects for writes from the message thread (panel/measurement).
     juce::RangedAudioParameter* targetParam = nullptr;
@@ -69,6 +70,7 @@ struct ChannelShared
     juce::RangedAudioParameter* automationParam = nullptr;
     juce::RangedAudioParameter* profileParam = nullptr;
     juce::RangedAudioParameter* sensParam = nullptr;
+    juce::RangedAudioParameter* speedParam = nullptr;
 
     juce::String displayName() const;
     bool isAutomationOn() const { return automationOn != nullptr && automationOn->load() > 0.5f; }

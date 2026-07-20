@@ -43,12 +43,22 @@ struct RiderProfile
 };
 
 // Order must match the "profile" AudioParameterChoice: Voz, Instrumento, Bateria.
+// Ride-up defaults follow the pro references: phrase-level for vocals (Vocal
+// Rider "Slow" ≈ 1.5-3 dB/s), note-by-note for instruments (Bass Rider holds
+// gain within notes), and fast per-hit convergence for drums (Drum Leveler
+// jumps to the new gain each hit).
 inline constexpr RiderProfile kProfiles[3] = {
-    { 2.5f, 2.0f, 6.0f, 6.0f, -45.0f, 2.0f, false }, // Voz
+    { 2.5f, 2.5f, 6.0f, 6.0f, -45.0f, 2.0f, false }, // Voz
     { 3.0f, 1.5f, 6.0f, 4.0f, -50.0f, 1.0f, false }, // Instrumento
-    { 0.0f, 1.5f, 4.0f, 4.0f, -40.0f, 0.5f, true },  // Bateria
+    { 0.0f, 4.0f, 8.0f, 4.0f, -40.0f, 0.5f, true },  // Bateria
 };
 constexpr int kNumProfiles = 3;
+
+// Editable rider speed (the ride-up rate; ride-down keeps the profile's
+// down/up ratio). The range spans syllable-fast vocal riding up to Drum
+// Leveler-style per-hit snaps.
+constexpr float kSpeedMinDbPerS = 0.5f;
+constexpr float kSpeedMaxDbPerS = 15.0f;
 
 // Sliding peak-hold implementation: coarse 100 ms slots, enough for the
 // longest profile window.
@@ -93,9 +103,11 @@ constexpr float kAgcPauseMarginDb = 3.0f;
 
 // The correction one AGC re-trim applies, from the peak observed over the
 // evidence period (the same formula a re-measurement would use). otherGainDb
-// is everything currently applied (trim + rider + protection). Empty while
-// the level is close enough to the target, or when the deviation looks like
-// a pause/bleed rather than a program change.
+// is the *base* gain only (trim + pending AGC) — never the rider, whose
+// temporary correction would mask exactly the permanent shifts the AGC is
+// there to fix, and never the Clip Guard cut, which is intentional
+// attenuation. Empty while the level is close enough to the target, or when
+// the deviation looks like a pause/bleed rather than a program change.
 inline std::optional<float> agcCorrectionDb(float evidencePeakDb, float otherGainDb,
                                             float targetDb)
 {
@@ -214,7 +226,8 @@ inline std::optional<float> computeTrimDb(float measuredPeakDb, float targetDb, 
 // slew-limited and confined to the profile's ride range. The loop converges
 // because raising the offset raises the output, shrinking the error.
 inline float riderOffsetStep(float offsetDb, float levelDb, float baseTrimDb, float targetDb,
-                             const RiderProfile& profile, float dt)
+                             const RiderProfile& profile, float dt, float upDbPerS,
+                             float downDbPerS)
 {
     const float error = targetDb - (levelDb + baseTrimDb + offsetDb);
     if (std::abs(error) <= kRiderToleranceDb)
@@ -222,8 +235,16 @@ inline float riderOffsetStep(float offsetDb, float levelDb, float baseTrimDb, fl
     // Correct only up to the edge of the deadband so the loop settles there
     // instead of oscillating around the exact target.
     const float effective = error > 0.0f ? error - kRiderToleranceDb : error + kRiderToleranceDb;
-    const float step = std::clamp(effective, -profile.downDbPerS * dt, profile.upDbPerS * dt);
+    const float step = std::clamp(effective, -downDbPerS * dt, upDbPerS * dt);
     return std::clamp(offsetDb + step, -profile.rideRangeDb, profile.rideRangeDb);
+}
+
+// Profile-default speeds (the editable "Velocidade" overrides them).
+inline float riderOffsetStep(float offsetDb, float levelDb, float baseTrimDb, float targetDb,
+                             const RiderProfile& profile, float dt)
+{
+    return riderOffsetStep(offsetDb, levelDb, baseTrimDb, targetDb, profile, dt,
+                           profile.upDbPerS, profile.downDbPerS);
 }
 
 // Program-presence window: the rider may only ride *up* while the level is

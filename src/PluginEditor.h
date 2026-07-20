@@ -76,22 +76,23 @@ private:
     bool advancedOpen = false; // "Avançado" disclosure, closed by default
     juce::TextButton advancedButton;
 
-    juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption, sectionLabel;
+    juce::Label title, nameCaption, presetCaption, profileCaption, sensCaption, speedCaption,
+        sectionLabel;
     juce::TextEditor nameEditor;
     juce::ComboBox presetBox, profileBox;
     MeterBar meter, outMeter;
     StatusStrip statusStrip;
     juce::Label meterCaption, outMeterCaption, targetCaption, trimCaption;
-    juce::Slider targetSlider, trimSlider, sensSlider;
+    juce::Slider targetSlider, trimSlider, sensSlider, speedSlider;
     juce::TextButton measureButton { "Regular ganho" };
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
         clipGuardToggle { utf8("Clip Guard (corte anti-clip)") },
-        agcToggle { utf8("AGC (reajuste do trim)") },
+        agcToggle { utf8("AGC (reajuste do ganho)") },
         panelToggle { utf8("Usar esta instância como painel de controle") };
 
     juce::AudioProcessorValueTreeState::SliderAttachment targetAttachment, trimAttachment,
-        sensAttachment;
+        sensAttachment, speedAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment automationAttachment, riderAttachment,
         clipGuardAttachment, agcAttachment;
     // Created after the box is populated (attachment applies the stored value).

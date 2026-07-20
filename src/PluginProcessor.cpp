@@ -39,6 +39,13 @@ namespace
             NormalisableRange<float>(-80.0f, -20.0f, 1.0f),
             dsp::kProfiles[1].sensitivityDb,
             AudioParameterFloatAttributes().withLabel("dBFS")));
+        // Rider ride-up speed; switching profile resets it to that profile's
+        // default (like the sensitivity).
+        layout.add(std::make_unique<AudioParameterFloat>(
+            ParameterID { "speed", 1 }, "Velocidade",
+            NormalisableRange<float>(dsp::kSpeedMinDbPerS, dsp::kSpeedMaxDbPerS, 0.1f),
+            dsp::kProfiles[1].upDbPerS,
+            AudioParameterFloatAttributes().withLabel("dB/s")));
         return layout;
     }
 } // namespace
@@ -58,11 +65,13 @@ AutoTrimProcessor::AutoTrimProcessor()
     shared->clipGuardOn = apvts.getRawParameterValue("clipguard");
     shared->profile = apvts.getRawParameterValue("profile");
     shared->sensitivityDb = apvts.getRawParameterValue("sens");
+    shared->speedDbPerS = apvts.getRawParameterValue("speed");
     shared->targetParam = apvts.getParameter("target");
     shared->trimParam = apvts.getParameter("trim");
     shared->automationParam = apvts.getParameter("automation");
     shared->profileParam = apvts.getParameter("profile");
     shared->sensParam = apvts.getParameter("sens");
+    shared->speedParam = apvts.getParameter("speed");
 }
 
 AutoTrimProcessor::~AutoTrimProcessor()
@@ -487,6 +496,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         // confined to the profile's ride range around the measured trim (the
         // trim parameter itself is only written from the message thread).
         const float target = shared->targetDb->load();
+        // The editable speed is the ride-up rate; ride-down keeps the
+        // profile's down/up ratio (attenuation always faster than boost).
+        const float upRate = shared->speedDbPerS->load();
+        const float downRate =
+            upRate * (profile.downDbPerS / juce::jmax(0.1f, profile.upDbPerS));
         float newOffset = offsetDb;
 
         if (! profile.hitBased)
@@ -512,7 +526,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 levelDb >= sensDb
                 && dsp::riderSeesProgram(levelDb, trimDb, offsetDb, target, profile);
             newOffset = hasProgram
-                            ? dsp::riderOffsetStep(offsetDb, levelDb, trimDb, target, profile, dt)
+                            ? dsp::riderOffsetStep(offsetDb, levelDb, trimDb, target, profile,
+                                                   dt, upRate, downRate)
                             : dsp::riderIdleStep(offsetDb, profile, dt);
         }
         else
@@ -528,7 +543,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 const float avgHitDb = sumDb / (float) juce::jmax(1, hitHistoryCount);
                 newOffset = dsp::riderOffsetStep(
                     offsetDb, avgHitDb, trimDb, target, profile,
-                    juce::jmin(sinceCorrectionS, dsp::kHitCorrectionMaxDtS));
+                    juce::jmin(sinceCorrectionS, dsp::kHitCorrectionMaxDtS), upRate, downRate);
                 sinceCorrectionS = 0.0f;
             }
             else if (sinceHitS > dsp::kDrumIdleS)
@@ -574,8 +589,12 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 continue; // noise floor: not evidence for or against
 
             const float target = shared->targetDb->load();
-            const float appliedDb =
-                trimDb + shared->riderOffsetDb.load() + agcDb + protectDb;
+            // Pre-rider, pre-Clip Guard: the AGC judges the *base* calibration
+            // (trim + its own pending correction). The rider's temporary
+            // correction would mask exactly the permanent shifts the AGC
+            // exists to fix, and a protective cut is intentional attenuation,
+            // not calibration.
+            const float appliedDb = trimDb + agcDb;
             const auto slotCorr = dsp::agcCorrectionDb(winMaxDb, appliedDb, target);
             if (! slotCorr)
             {

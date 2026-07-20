@@ -58,6 +58,7 @@ inline void apply(ChannelShared& ch, const Preset& preset)
     writeParam(ch.targetParam, preset.targetDb);
     writeParam(ch.profileParam, (float) preset.profile);
     writeParam(ch.sensParam, dsp::profileFor(preset.profile).sensitivityDb);
+    writeParam(ch.speedParam, dsp::profileFor(preset.profile).upDbPerS);
 }
 
 // Fills the box as an action menu: no persistent selection, just a trigger.

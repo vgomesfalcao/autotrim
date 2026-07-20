@@ -55,6 +55,13 @@ int main()
     CHECK(approx(riderOffsetStep(0.0f, -40.0f, 0.0f, -18.0f, voice, 1.0f), voice.upDbPerS));
     CHECK(approx(riderOffsetStep(0.0f, -6.0f, 0.0f, -30.0f, voice, 1.0f), -voice.downDbPerS));
 
+    // The editable speed overrides the profile rates (up explicit, down at
+    // the caller's ratio) without touching the ride range.
+    CHECK(approx(riderOffsetStep(0.0f, -40.0f, 0.0f, -18.0f, voice, 1.0f, 5.0f, 15.0f), 5.0f));
+    CHECK(approx(riderOffsetStep(0.0f, -6.0f, 0.0f, -30.0f, voice, 1.0f, 1.0f, 3.0f), -3.0f));
+    CHECK(approx(riderOffsetStep(0.0f, -50.0f, 0.0f, -18.0f, voice, 10.0f, 15.0f, 45.0f),
+                 voice.rideRangeDb));
+
     // The offset is confined to the profile's ride range around the measured
     // trim, regardless of how large the error is (option B).
     {
