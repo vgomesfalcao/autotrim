@@ -99,6 +99,14 @@ void poll()
     if (! running)
         return;
 
+    // Refresh the dominance reference: the loudest pre-trim peak across the
+    // whole session (not just measuring channels — the loud source may not
+    // be part of this run, e.g. a solo "Reg" on a tom while the band plays).
+    float dominant = 0.0f;
+    for (auto& ch : registry::channels())
+        dominant = juce::jmax(dominant, ch->peakPreTrim.load());
+    registry::measDominantPeak.store(dominant);
+
     const float maxTrim = registry::maxTrimDb.load();
     const bool timedOut = juce::Time::getMillisecondCounterHiRes() > armDeadlineMs;
     bool anyPending = false;

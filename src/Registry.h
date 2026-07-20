@@ -86,5 +86,9 @@ namespace registry
     // Session-wide settings owned by the panel instance.
     extern std::atomic<float> maxTrimDb;
     extern std::atomic<float> measDurationS;
+    // Loudest pre-trim peak across all channels, refreshed by the message
+    // thread while a measurement runs (read lock-free by audio threads for
+    // the dominance check).
+    extern std::atomic<float> measDominantPeak;
 } // namespace registry
 } // namespace autotrim
