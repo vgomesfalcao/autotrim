@@ -271,12 +271,23 @@ void MeterBar::paint(juce::Graphics& g)
         g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
     }
 
-    g.setColour(colours::text);
-    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    // Numeric readout: the bar's own fill colour underneath varies (dark,
+    // teal, amber, red, yellow), so plain white text loses contrast whenever
+    // it lands on a light fill. A dark backing chip guarantees legibility
+    // regardless of what's underneath — same trick as the CLIP/AGC badges.
     const auto text = textDb <= -90.0f
                           ? "-inf" + unit
                           : (textDb >= 0.0f ? "+" : "") + juce::String(textDb, 1) + unit;
-    g.drawText(text, getLocalBounds().reduced(6, 0), juce::Justification::centredRight);
+    const auto textFont = juce::Font(juce::FontOptions(12.0f));
+    g.setFont(textFont);
+    auto textArea = getLocalBounds().toFloat().reduced(6.0f, 0.0f);
+    const float textW = juce::jmin(
+        textArea.getWidth(), (float) juce::GlyphArrangement::getStringWidth(textFont, text) + 8.0f);
+    auto chip = textArea.removeFromRight(textW);
+    g.setColour(colours::background.withAlpha(0.68f));
+    g.fillRoundedRectangle(chip.expanded(2.0f, 1.0f), 3.0f);
+    g.setColour(colours::text);
+    g.drawText(text, chip, juce::Justification::centredRight);
 }
 
 //==============================================================================
