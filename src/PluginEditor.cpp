@@ -105,6 +105,13 @@ namespace
         param->setValueNotifyingHost(value ? 1.0f : 0.0f);
         param->endChangeGesture();
     }
+
+    // The audio thread stamped a block within the last 250 ms => the source is
+    // live; otherwise the meter should drain instead of holding a frozen peak.
+    bool sourceLive(const ChannelShared& s)
+    {
+        return juce::Time::getMillisecondCounterHiRes() - s.lastProcessMs.load() < 250.0;
+    }
 } // namespace
 
 //==============================================================================
@@ -129,10 +136,22 @@ namespace
     constexpr float kPeakHoldFallDbPerS = 6.0f;
 } // namespace
 
-void MeterBar::setLevelLin(float newLevelLin)
+void MeterBar::setLevelLin(float newLevelLin, bool sourceLive)
 {
-    const float newDb = dsp::gainToDb(newLevelLin);
     const double now = juce::Time::getMillisecondCounterHiRes();
+    const float inputDb = dsp::gainToDb(newLevelLin);
+
+    // Display ballistics: instant attack up to the input, then fall at the
+    // meter decay rate. While the source is live the floor is the input (the
+    // audio thread already applies its own decay); when the audio has stopped
+    // the floor drops to silence so a frozen peak drains away on the UI clock
+    // instead of locking the meter on a spike.
+    const double dtS = juce::jlimit(0.0, 0.25, (now - displayStepMs) / 1000.0);
+    displayStepMs = now;
+    const float newDb = inputDb >= levelDb
+                            ? inputDb
+                            : juce::jmax(sourceLive ? inputDb : -200.0f,
+                                         levelDb - (float) (dsp::kMeterDecayDbPerS * dtS));
     bool dirty = std::abs(newDb - levelDb) > 0.05f;
     levelDb = newDb;
 
@@ -677,10 +696,11 @@ void ChannelView::refresh()
     // Both meters share the same fixed 0 dBFS-anchored scale; the Target
     // mark moves freely within it (on the input meter it sits at
     // target − trim, where the input should land).
-    meter.setLevelLin(proc.shared->peakPreTrim.load());
+    const bool live = sourceLive(*proc.shared);
+    meter.setLevelLin(proc.shared->peakPreTrim.load(), live);
     meter.setHotDb(0.0f);
     meter.setTickDb(target - (trim + riderOffset));
-    outMeter.setLevelLin(proc.shared->peakPostTrim.load());
+    outMeter.setLevelLin(proc.shared->peakPostTrim.load(), live);
     outMeter.setHotDb(0.0f);
     outMeter.setTickDb(target);
 
@@ -825,10 +845,11 @@ void PanelRow::refresh()
     const float trim = shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f;
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
-    meter.setLevelLin(shared->peakPreTrim.load());
+    const bool live = sourceLive(*shared);
+    meter.setLevelLin(shared->peakPreTrim.load(), live);
     meter.setHotDb(0.0f);
     meter.setTickDb(target - (trim + shared->riderOffsetDb.load()));
-    outMeter.setLevelLin(shared->peakPostTrim.load());
+    outMeter.setLevelLin(shared->peakPostTrim.load(), live);
     outMeter.setHotDb(0.0f);
     outMeter.setTickDb(target);
     // Don't fight the user's drag; otherwise mirror the parameter.
@@ -944,7 +965,7 @@ void MiniPanelRow::refresh()
         formatDb(shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f),
         juce::dontSendNotification);
     gainLabel.setColour(juce::Label::textColourId, agcActive ? colours::warning : colours::text);
-    outMeter.setLevelLin(shared->peakPostTrim.load());
+    outMeter.setLevelLin(shared->peakPostTrim.load(), sourceLive(*shared));
     outMeter.setAgcTint(agcActive);
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
@@ -1001,7 +1022,7 @@ void MiniPanelView::refresh()
     measureButton.setVisible(! running);
     progressBar.setVisible(running);
 
-    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()));
+    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()), sourceLive(*proc.shared));
 
     rebuildRowsIfNeeded();
     for (auto& row : rows)
@@ -1184,7 +1205,7 @@ void PanelView::refresh()
     measureButton.setVisible(! running);
     progressBar.setVisible(running);
     cancelButton.setVisible(running);
-    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()));
+    lufsMeter.setLevelLin(dsp::dbToGain(proc.shared->lufsShort.load()), sourceLive(*proc.shared));
 
     rebuildRowsIfNeeded();
     for (auto& row : rows)

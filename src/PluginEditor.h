@@ -16,7 +16,10 @@ namespace autotrim
 class MeterBar : public juce::Component
 {
 public:
-    void setLevelLin(float newLevelLin);
+    // sourceLive is false when the audio thread has stopped updating the
+    // shared value (transport stopped / plugin not being called); the meter
+    // then drains on the UI clock so a frozen peak doesn't stick.
+    void setLevelLin(float newLevelLin, bool sourceLive = true);
     // The scale's fixed reference point — 0 dBFS for peak meters, the LUFS
     // target for the loudness meter — never varies per channel/instance, so
     // every meter shares the same geometry and marks are genuinely
@@ -38,7 +41,8 @@ public:
 private:
     float mapDbToFrac(float db) const;
 
-    float levelDb = -200.0f;
+    float levelDb = -200.0f; // displayed level (ballistics applied)
+    double displayStepMs = 0.0;
     float hotDb = 0.0f;
     float tickDb = -10.0f;
     bool tickVisible = true;

@@ -39,6 +39,9 @@ struct ChannelShared
 
     std::atomic<float> peakPreTrim { 0.0f };   // linear, decaying meter value
     std::atomic<float> peakPostTrim { 0.0f };  // linear, decaying, after trim
+    // Wall-clock ms of the last processBlock; the UI meters use it to tell a
+    // live source from a stopped one (a frozen peak must not stick).
+    std::atomic<double> lastProcessMs { 0.0 };
     std::atomic<float> lufsShort { -100.0f };  // panel instance only (master mix)
     std::atomic<float> measuredPeak { 0.0f };  // linear, max during measurement
     std::atomic<float> riderOffsetDb { 0.0f };   // continuous-mode correction

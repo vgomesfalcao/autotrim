@@ -202,6 +202,10 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (numSamples == 0)
         return;
 
+    // Liveness stamp for the UI meters (so a stopped transport drains the bar
+    // instead of freezing it on a peak).
+    shared->lastProcessMs.store(juce::Time::getMillisecondCounterHiRes());
+
     // Mono-to-stereo layouts: duplicate the mono input into the extra output
     // channels before processing.
     for (int ch = getMainBusNumInputChannels(); ch < numChannels; ++ch)
@@ -289,13 +293,13 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 // the strong ones (bleed, ghost notes) are dropped so they
                 // never drag the measured level down. Peak mode instead keeps
                 // the single loudest hit.
-                measHitsDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(*hit);
+                measPeaksDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(*hit);
                 ++measCount;
                 measPeakMaxLin = juce::jmax(measPeakMaxLin, *hit);
                 shared->measuredPeak.store(
                     peakMode ? measPeakMaxLin
                              : dsp::dbToGain(dsp::gatedHitAverageDb(
-                                 measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
+                                 measPeaksDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
                 shared->measHitCount.store((uint32_t) measCount);
             }
             if (hitDetector.inHit && ! measStartedLocal)
@@ -368,6 +372,25 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
+        // Publishes the final measured level and closes the window. In average
+        // mode it applies the frequent-peak protection: when loud peaks are
+        // frequent (the mean undersells the material, gain would run hot) the
+        // level is pulled back so the loudest peak lands at +3 dB over target;
+        // a rare stray peak keeps the mean. Peak mode already calibrated to
+        // the loudest peak, so it's left as-is.
+        const auto closeMeasurement = [&]
+        {
+            if (! peakMode)
+            {
+                const float meanDb = dsp::gainToDb(shared->measuredPeak.load());
+                const float level = dsp::peakLimitedLevelDb(
+                    meanDb, measPeaksDb, juce::jmin(measCount, dsp::kMeasMaxHits));
+                shared->measuredPeak.store(dsp::dbToGain(level));
+            }
+            shared->measuring.store(false);
+            shared->measDone.store(true);
+        };
+
         if (profile.hitBased)
         {
             // Percussive sources close by a HIT COUNT, wholly independent of
@@ -376,10 +399,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             // averaged (with the bleed gate) in the sample loop above; here we
             // just check whether enough have been captured.
             if (measStartedLocal && measCount >= registry::measHits.load())
-            {
-                shared->measuring.store(false);
-                shared->measDone.store(true);
-            }
+                closeMeasurement();
         }
         else
         {
@@ -401,7 +421,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                 }
 
                 // Average mode: mean of 0.5 s slot peaks above the arm
-                // threshold — the trim calibrates the typical peak. Peak mode:
+                // threshold — the trim calibrates the typical peak; each slot
+                // peak is also kept for the sporadic-peak check. Peak mode:
                 // the single loudest block instead (updated every block).
                 if (peakMode)
                 {
@@ -411,16 +432,15 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                         shared->measuredPeak.store(measPeakMaxLin);
                     }
                 }
-                else if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
+                else if (const auto res = measAverager.step(blockPeak, dt, measArmLin))
                 {
-                    shared->measuredPeak.store(dsp::dbToGain(*avgDb));
+                    measPeaksDb[measCount % dsp::kMeasMaxHits] = res->slotPeakDb;
+                    ++measCount;
+                    shared->measuredPeak.store(dsp::dbToGain(res->avgDb));
                 }
 
                 if (measBudget.step(numSamples, blockPeak > measArmLin))
-                {
-                    shared->measuring.store(false);
-                    shared->measDone.store(true);
-                }
+                    closeMeasurement();
             }
         }
     }
