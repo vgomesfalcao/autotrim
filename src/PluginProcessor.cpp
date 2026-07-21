@@ -54,11 +54,12 @@ namespace
             NormalisableRange<float>(dsp::kSpeedMinDbPerS, dsp::kSpeedMaxDbPerS, 0.1f),
             dsp::kProfiles[1].upDbPerS,
             AudioParameterFloatAttributes().withLabel("dB/s")));
-        // Measurement algorithm: false = average (default), true = highest
-        // peak. Per channel; some sources calibrate better on the loudest
-        // moment than on the typical level.
+        // Measurement algorithm: true = highest peak (default), false =
+        // average. Per channel; peak is the safe default (calibrate to the
+        // loudest moment), average suits sources where the typical level
+        // matters more than the odd spike.
         layout.add(std::make_unique<AudioParameterBool>(
-            ParameterID { "peakmode", 1 }, "Medir por pico", false));
+            ParameterID { "peakmode", 1 }, "Medir por pico", true));
         return layout;
     }
 } // namespace

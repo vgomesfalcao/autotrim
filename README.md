@@ -39,16 +39,16 @@ Há **dois modos de medição, com parâmetros independentes no painel**, mais u
 
 ### Média vs pico mais alto
 
-Por padrão o nível medido é a **média dos picos**, não o pico máximo (mais estável, ignora um estouro isolado).
+Por padrão o nível medido é o **pico mais alto** capturado na janela/batidas (calibração segura).
 
-Cada canal tem, no **Avançado**, o switch **"Medir pelo pico mais alto (em vez da média)"**: ligado, o canal calibra pelo **pico máximo** capturado na janela/batidas — útil para fontes onde o momento mais alto é o que importa evitar.
+O switch **"Medir pelo pico mais alto (em vez da média)"** no **Avançado** vem **ligado por padrão**. Desligue-o para calibrar pela **média** dos picos — melhor para fontes onde o nível típico importa mais que um estouro isolado.
 
-### Proteção contra picos frequentes
+### Proteção contra picos frequentes (modo média)
 
-No modo **média**, depois de calibrar pela média, o AutoTrim confere a frequência dos picos altos:
+Vale só no modo **média** (o modo pico já calibra pelo mais alto). Depois de calibrar pela média, o AutoTrim confere a frequência dos picos altos:
 
-- Se picos altos forem **frequentes** — pelo menos **20% dos picos capturados** ficam mais de **3 dB acima da média** (ou seja, o ganho rodaria quente) — o nível é puxado para trás de modo que o pico mais alto caia **no máximo 3 dB acima do target**.
-- Um pico avulso/esporádico (abaixo de 20%) é deixado em paz e mantém a média.
+- Se picos altos forem **frequentes** — pelo menos a % configurada no painel (**"Picos frequentes (%)"**, padrão **10%**, ajustável de 5 a 50%) dos picos capturados ficam mais de **3 dB acima da média** (ou seja, o ganho rodaria quente) — o nível é puxado para trás de modo que o pico mais alto caia **no máximo 3 dB acima do target**.
+- Um pico avulso/esporádico (abaixo da %) é deixado em paz e mantém a média.
 
 ### Sensibilidade e vazamento
 
@@ -114,7 +114,7 @@ A seção **Avançado** (fechada por padrão no plugin do canal) concentra o que
 | **Máx. do AGC** | ±10 dB | Correção máxima que o AGC pode aplicar; 1–20 dB. |
 | **Clip Guard** | ligado | Corte automático quando a saída clipa (0 dBFS, 5×/3 s), corte máximo −12 dB. |
 | **AGC** | desligado | Correção automática de mudanças permanentes de nível do programa. |
-| **Medir pelo pico mais alto (em vez da média)** | desligado | Calibra pelo pico máximo capturado em vez da média dos picos. |
+| **Medir pelo pico mais alto (em vez da média)** | ligado | Calibra pelo pico máximo capturado; desligado, calibra pela média dos picos. |
 
 ## Build no Linux (via Docker)
 
