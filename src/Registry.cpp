@@ -2,6 +2,8 @@
 
 #include "Dsp.h"
 
+#include <algorithm>
+
 namespace autotrim
 {
 juce::String ChannelShared::displayName() const
@@ -40,6 +42,9 @@ namespace registry
     {
         auto shared = std::make_shared<ChannelShared>();
         shared->id = nextId.fetch_add(1);
+        // Default order matches registration order; setStateInformation
+        // overwrites it with the persisted value once the host restores state.
+        shared->order.store((int) shared->id);
         const juce::ScopedLock lock(registryLock());
         registryList().push_back(shared);
         return shared;
@@ -55,11 +60,19 @@ namespace registry
 
     std::vector<std::shared_ptr<ChannelShared>> channels()
     {
-        const juce::ScopedLock lock(registryLock());
         std::vector<std::shared_ptr<ChannelShared>> result;
-        for (auto& ch : registryList())
-            if (ch->alive.load() && ! ch->panelMode.load())
-                result.push_back(ch);
+        {
+            const juce::ScopedLock lock(registryLock());
+            for (auto& ch : registryList())
+                if (ch->alive.load() && ! ch->panelMode.load())
+                    result.push_back(ch);
+        }
+        std::sort(result.begin(), result.end(),
+                 [](const auto& a, const auto& b)
+                 {
+                     const int oa = a->order.load(), ob = b->order.load();
+                     return oa != ob ? oa < ob : a->id < b->id;
+                 });
         return result;
     }
 } // namespace registry

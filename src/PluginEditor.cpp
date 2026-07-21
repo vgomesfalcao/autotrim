@@ -695,6 +695,17 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
     meter.setTickVisible(false); // input level needs no moving mark
     nameLabel.setFont(juce::Font(juce::FontOptions(16.0f)));
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
+    profileLabel.setFont(juce::Font(juce::FontOptions(11.5f)));
+    profileLabel.setColour(juce::Label::textColourId, colours::subtext);
+
+    for (auto* b : { &moveUpButton, &moveDownButton })
+    {
+        b->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        b->setColour(juce::TextButton::textColourOffId, colours::subtext);
+        b->setColour(juce::TextButton::textColourOnId, colours::subtext);
+    }
+    moveUpButton.onClick = [this] { if (onMoveUp) onMoveUp(); };
+    moveDownButton.onClick = [this] { if (onMoveDown) onMoveDown(); };
 
     // Manual gain knob for this channel, writing straight to its parameter.
     trimKnob.setName("row");
@@ -723,15 +734,20 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
     styleRegButton(regButton, shared);
 
     for (auto* c : std::initializer_list<juce::Component*> {
-             &nameLabel, &meter, &outMeter, &regButton, &presetBox, &trimKnob,
-             &automationToggle, &statusLabel })
+             &nameLabel, &profileLabel, &meter, &outMeter, &regButton, &presetBox, &trimKnob,
+             &automationToggle, &statusLabel, &moveUpButton, &moveDownButton })
         addAndMakeVisible(c);
 }
 
 void PanelRow::resized()
 {
     auto r = getLocalBounds().reduced(4);
-    nameLabel.setBounds(r.removeFromLeft(kColName));
+    auto moveCol = r.removeFromLeft(18);
+    moveUpButton.setBounds(moveCol.removeFromTop(moveCol.getHeight() / 2));
+    moveDownButton.setBounds(moveCol);
+    auto nameCol = r.removeFromLeft(kColName);
+    nameLabel.setBounds(nameCol.removeFromTop(nameCol.getHeight() * 3 / 5));
+    profileLabel.setBounds(nameCol);
     statusLabel.setBounds(r.removeFromRight(kColStatus));
     automationToggle.setBounds(r.removeFromRight(kColAuto).withSizeKeepingCentre(24, 24));
     trimKnob.setBounds(r.removeFromRight(kColTrim).reduced(0, 2));
@@ -753,6 +769,11 @@ void PanelRow::paint(juce::Graphics& g)
 void PanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    const int profileIndex = shared->profile != nullptr ? (int) shared->profile->load() : 1;
+    profileLabel.setText(dsp::kProfileNames[juce::jlimit(0, dsp::kNumProfiles - 1, profileIndex)],
+                         juce::dontSendNotification);
+    moveUpButton.setEnabled(onMoveUp != nullptr);
+    moveDownButton.setEnabled(onMoveDown != nullptr);
     const float trim = shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f;
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
@@ -840,8 +861,13 @@ MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std:
 {
     nameLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
     nameLabel.setColour(juce::Label::textColourId, colours::text);
+    // Read-only Ganho readout — piloting the show is glance-only here, no
+    // knob to fight with (that lives in the full panel or the channel view).
+    gainLabel.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
+    gainLabel.setJustificationType(juce::Justification::centredRight);
     styleRegButton(regButton, shared);
     addAndMakeVisible(nameLabel);
+    addAndMakeVisible(gainLabel);
     addAndMakeVisible(outMeter);
     addAndMakeVisible(regButton);
 }
@@ -849,9 +875,11 @@ MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std:
 void MiniPanelRow::resized()
 {
     auto r = getLocalBounds().reduced(2);
-    nameLabel.setBounds(r.removeFromLeft(88));
+    nameLabel.setBounds(r.removeFromLeft(72));
     regButton.setBounds(r.removeFromRight(42).reduced(0, 2));
     r.removeFromRight(6);
+    gainLabel.setBounds(r.removeFromLeft(52));
+    r.removeFromLeft(4);
     outMeter.setBounds(r.reduced(0, 4));
 }
 
@@ -862,8 +890,13 @@ void MiniPanelRow::refresh()
     // Red name = overload protection engaged on this channel.
     nameLabel.setColour(juce::Label::textColourId,
                         shared->protectionActive.load() ? colours::meterHigh : colours::text);
+    const bool agcActive = std::abs(shared->agcOffsetDb.load()) > 0.05f;
+    gainLabel.setText(
+        formatDb(shared->trimDb != nullptr ? shared->trimDb->load() : 0.0f),
+        juce::dontSendNotification);
+    gainLabel.setColour(juce::Label::textColourId, agcActive ? colours::warning : colours::text);
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    outMeter.setAgcTint(std::abs(shared->agcOffsetDb.load()) > 0.05f);
+    outMeter.setAgcTint(agcActive);
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
     outMeter.setHotDb(0.0f);
@@ -1090,10 +1123,15 @@ void PanelView::rebuildRowsIfNeeded()
         return;
 
     rows.clear();
-    for (auto& ch : channels)
+    for (size_t i = 0; i < channels.size(); ++i)
     {
-        rows.push_back(std::make_unique<PanelRow>(ch));
-        rowContainer.addAndMakeVisible(*rows.back());
+        auto row = std::make_unique<PanelRow>(channels[i]);
+        if (i > 0)
+            row->onMoveUp = [this, i] { swapOrder(i, i - 1); };
+        if (i + 1 < channels.size())
+            row->onMoveDown = [this, i] { swapOrder(i, i + 1); };
+        rowContainer.addAndMakeVisible(*row);
+        rows.push_back(std::move(row));
     }
     layoutRows();
 }
@@ -1108,6 +1146,17 @@ void PanelView::layoutRows()
         row->setBounds(0, y, width, kRowHeight);
         y += kRowHeight;
     }
+}
+
+void PanelView::swapOrder(size_t a, size_t b)
+{
+    auto channels = registry::channels();
+    if (a >= channels.size() || b >= channels.size())
+        return;
+    const int orderA = channels[a]->order.load();
+    const int orderB = channels[b]->order.load();
+    channels[a]->order.store(orderB);
+    channels[b]->order.store(orderA);
 }
 
 //==============================================================================

@@ -53,6 +53,7 @@ inline constexpr RiderProfile kProfiles[3] = {
     { 0.0f, 4.0f, 8.0f, 4.0f, -40.0f, 0.5f, true },  // Bateria
 };
 constexpr int kNumProfiles = 3;
+inline constexpr const char* kProfileNames[3] = { "Voz", "Instrumento", "Bateria" };
 
 // Editable rider speed (the ride-up rate; ride-down keeps the profile's
 // down/up ratio). The range spans syllable-fast vocal riding up to Drum

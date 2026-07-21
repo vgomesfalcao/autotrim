@@ -26,6 +26,12 @@ inline juce::String utf8(const char* text)
 struct ChannelShared
 {
     uint64_t id = 0;
+    // Manual panel order (defaults to registration order = id, which usually
+    // matches track order on a fresh session load, but isn't guaranteed —
+    // hosts don't expose a reliable track index to plugins). Editable via the
+    // panel's move up/down buttons; persisted per instance so it survives a
+    // session reload. Ties (equal order) fall back to id.
+    std::atomic<int> order { 0 };
 
     juce::CriticalSection nameLock;
     juce::String name;     // user-set; guarded by nameLock, message/state threads only
@@ -87,7 +93,8 @@ namespace registry
 {
     std::shared_ptr<ChannelShared> registerInstance();
     void unregisterInstance(const std::shared_ptr<ChannelShared>& shared);
-    // Alive, non-panel channels in registration order.
+    // Alive, non-panel channels sorted by their manual panel order (ties
+    // broken by registration order).
     std::vector<std::shared_ptr<ChannelShared>> channels();
 
     // Session-wide settings owned by the panel instance.

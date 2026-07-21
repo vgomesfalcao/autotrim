@@ -5,6 +5,8 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <functional>
+
 namespace autotrim
 {
 // Horizontal peak meter with a target-anchored nonlinear scale: the target
@@ -116,17 +118,21 @@ public:
     void refresh();
 
     std::shared_ptr<ChannelShared> shared;
+    // Set by PanelView after construction; absent (empty) at a list boundary.
+    std::function<void()> onMoveUp, onMoveDown;
 
 private:
-    juce::Label nameLabel, statusLabel;
+    juce::Label nameLabel, profileLabel, statusLabel;
     MeterBar meter, outMeter;
     juce::TextButton regButton;
+    juce::TextButton moveUpButton { utf8("▲") }, moveDownButton { utf8("▼") };
     juce::Slider trimKnob;
     juce::ComboBox presetBox;
     juce::ToggleButton automationToggle;
 };
 
-// Compact-panel row: name + post-trim meter with target mark, nothing else.
+// Compact-panel row: name, calibrated Ganho value (read-only, no knob — this
+// view is for glancing during the show, not adjusting), post-trim meter.
 class MiniPanelRow : public juce::Component
 {
 public:
@@ -137,7 +143,7 @@ public:
     std::shared_ptr<ChannelShared> shared;
 
 private:
-    juce::Label nameLabel;
+    juce::Label nameLabel, gainLabel;
     MeterBar outMeter;
     juce::TextButton regButton;
 };
@@ -194,6 +200,10 @@ private:
 
     void rebuildRowsIfNeeded();
     void layoutRows();
+    // Swaps the manual panel order between the channels currently at
+    // positions a and b in the sorted list (re-fetched fresh each time, so
+    // it never acts on a stale snapshot).
+    void swapOrder(size_t a, size_t b);
 };
 
 class AutoTrimEditor : public juce::AudioProcessorEditor, private juce::Timer
