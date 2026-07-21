@@ -115,11 +115,17 @@ namespace
 //==============================================================================
 namespace
 {
-    // Nonlinear meter scale anchored on the target.
+    // Nonlinear meter scale, fixed and identical for every instance: the
+    // "hot" reference point (0 dBFS for peak meters, the LUFS target for the
+    // loudness meter) always sits at kMeterHotFrac, with the kMeterZoomSpanDb
+    // below it getting most of the width — that's the region operators
+    // actually watch (near clipping, or near the calibrated target).
+    // Marks (the per-channel Target) move freely within this fixed scale.
     constexpr float kMeterFloorDb = -60.0f;
-    constexpr float kMeterKneeDb = 12.0f;  // fine-zoom span below the target
-    constexpr float kMeterKneeFrac = 0.25f;
-    constexpr float kMeterTargetFrac = 0.70f;
+    constexpr float kMeterZoomSpanDb = 24.0f;
+    constexpr float kMeterZoomStartFrac = 0.22f;
+    constexpr float kMeterHotFrac = 0.88f;
+    constexpr float kMeterOverheadDb = 6.0f; // headroom shown past the hot point
 } // namespace
 
 void MeterBar::setLevelLin(float newLevelLin)
@@ -165,11 +171,11 @@ void MeterBar::setAgcTint(bool shouldTint)
     }
 }
 
-void MeterBar::setScaleAnchorDb(float newAnchorDb)
+void MeterBar::setHotDb(float newHotDb)
 {
-    if (std::abs(newAnchorDb - anchorDb) > 0.05f)
+    if (std::abs(newHotDb - hotDb) > 0.05f)
     {
-        anchorDb = newAnchorDb;
+        hotDb = newHotDb;
         repaint();
     }
 }
@@ -185,17 +191,18 @@ void MeterBar::setTickDb(float newTickDb)
 
 float MeterBar::mapDbToFrac(float db) const
 {
-    const float t = juce::jlimit(kMeterFloorDb + 4.0f, -1.0f, anchorDb);
-    const float knee = juce::jmax(t - kMeterKneeDb, kMeterFloorDb + 2.0f);
+    const float zoomStart = hotDb - kMeterZoomSpanDb;
     if (db <= kMeterFloorDb)
         return 0.0f;
-    if (db <= knee)
-        return kMeterKneeFrac * (db - kMeterFloorDb) / (knee - kMeterFloorDb);
-    if (db <= t)
-        return kMeterKneeFrac + (kMeterTargetFrac - kMeterKneeFrac) * (db - knee) / (t - knee);
-    if (db >= 0.0f)
-        return 1.0f;
-    return kMeterTargetFrac + (1.0f - kMeterTargetFrac) * (db - t) / (0.0f - t);
+    if (db <= zoomStart)
+        return kMeterZoomStartFrac * (db - kMeterFloorDb) / (zoomStart - kMeterFloorDb);
+    if (db <= hotDb)
+        return kMeterZoomStartFrac
+               + (kMeterHotFrac - kMeterZoomStartFrac) * (db - zoomStart) / kMeterZoomSpanDb;
+    // Past the hot point: a fixed headroom span stays visible instead of
+    // pinning instantly to the edge, so an over is legible while it happens.
+    const float over = juce::jmin(db - hotDb, kMeterOverheadDb);
+    return kMeterHotFrac + (1.0f - kMeterHotFrac) * over / kMeterOverheadDb;
 }
 
 void MeterBar::paint(juce::Graphics& g)
@@ -215,11 +222,13 @@ void MeterBar::paint(juce::Graphics& g)
         }
         else
         {
-            // Teal up to the target mark, then amber into red past it.
+            // Teal up to the hot point (0 dBFS / the LUFS target), then amber
+            // into red past it — headroom at a glance, independent of where
+            // this channel's own Target mark happens to sit.
             juce::ColourGradient gradient(colours::meterLow, r.getX(), 0.0f,
                                           colours::meterHigh, r.getRight(), 0.0f, false);
-            gradient.addColour(kMeterTargetFrac, colours::meterLow);
-            gradient.addColour(juce::jmin(kMeterTargetFrac + 0.12, 0.99), colours::warning);
+            gradient.addColour(kMeterHotFrac, colours::meterLow);
+            gradient.addColour(juce::jmin(kMeterHotFrac + 0.10, 0.99), colours::warning);
             g.setGradientFill(gradient);
             g.fillRoundedRectangle(r.withWidth(r.getWidth() * frac), 4.0f);
         }
@@ -631,13 +640,14 @@ void ChannelView::refresh()
         nameEditor.repaint();
     }
 
-    // Both meters use a stable target-anchored scale; on the input meter only
-    // the mark moves (to target − trim, where the input should sit).
+    // Both meters share the same fixed 0 dBFS-anchored scale; the Target
+    // mark moves freely within it (on the input meter it sits at
+    // target − trim, where the input should land).
     meter.setLevelLin(proc.shared->peakPreTrim.load());
-    meter.setScaleAnchorDb(target);
+    meter.setHotDb(0.0f);
     meter.setTickDb(target - (trim + riderOffset));
     outMeter.setLevelLin(proc.shared->peakPostTrim.load());
-    outMeter.setScaleAnchorDb(target);
+    outMeter.setHotDb(0.0f);
     outMeter.setTickDb(target);
 
     // Yellow = an AGC correction is acting: output meter, knob and chip.
@@ -731,10 +741,10 @@ void PanelRow::refresh()
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
     meter.setLevelLin(shared->peakPreTrim.load());
-    meter.setScaleAnchorDb(target);
+    meter.setHotDb(0.0f);
     meter.setTickDb(target - (trim + shared->riderOffsetDb.load()));
     outMeter.setLevelLin(shared->peakPostTrim.load());
-    outMeter.setScaleAnchorDb(target);
+    outMeter.setHotDb(0.0f);
     outMeter.setTickDb(target);
     // Don't fight the user's drag; otherwise mirror the parameter.
     if (! trimKnob.isMouseButtonDown())
@@ -840,7 +850,7 @@ void MiniPanelRow::refresh()
     outMeter.setAgcTint(std::abs(shared->agcOffsetDb.load()) > 0.05f);
     const float target =
         shared->targetDb != nullptr ? shared->targetDb->load() : dsp::kDefaultTargetDb;
-    outMeter.setScaleAnchorDb(target);
+    outMeter.setHotDb(0.0f);
     outMeter.setTickDb(target);
 }
 
@@ -859,7 +869,7 @@ MiniPanelView::MiniPanelView(AutoTrimProcessor& processor) : proc(processor)
 
     styleCaption(lufsCaption, "LUFS");
     lufsMeter.setUnit(" LUFS");
-    lufsMeter.setScaleAnchorDb(dsp::kLufsTargetDb);
+    lufsMeter.setHotDb(dsp::kLufsTargetDb);
     lufsMeter.setTickDb(dsp::kLufsTargetDb);
 
     for (auto* c : std::initializer_list<juce::Component*> {
@@ -974,7 +984,7 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 
     styleCaption(lufsCaption, "LUFS (master)");
     lufsMeter.setUnit(" LUFS");
-    lufsMeter.setScaleAnchorDb(dsp::kLufsTargetDb);
+    lufsMeter.setHotDb(dsp::kLufsTargetDb);
     lufsMeter.setTickDb(dsp::kLufsTargetDb);
     addAndMakeVisible(lufsCaption);
     addAndMakeVisible(lufsMeter);

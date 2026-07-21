@@ -15,11 +15,13 @@ class MeterBar : public juce::Component
 {
 public:
     void setLevelLin(float newLevelLin);
-    // Anchors the nonlinear scale (fixed per channel — the bar must never
-    // move because of a trim change).
-    void setScaleAnchorDb(float newAnchorDb);
-    // Where to draw the mark (may differ from the anchor, e.g. the input
-    // meter marks target − trim on a target-anchored scale).
+    // The scale's fixed reference point — 0 dBFS for peak meters, the LUFS
+    // target for the loudness meter — never varies per channel/instance, so
+    // every meter shares the same geometry and marks are genuinely
+    // comparable and move with their real value.
+    void setHotDb(float newHotDb);
+    // Where to draw the mark (e.g. the per-channel Target, or target − trim
+    // for the input meter); moves freely within the fixed scale.
     void setTickDb(float newTickDb);
     void setTickVisible(bool shouldShow) { tickVisible = shouldShow; }
     void setUnit(const juce::String& newUnit) { unit = newUnit; }
@@ -31,7 +33,7 @@ private:
     float mapDbToFrac(float db) const;
 
     float levelDb = -200.0f;
-    float anchorDb = -10.0f;
+    float hotDb = 0.0f;
     float tickDb = -10.0f;
     bool tickVisible = true;
     juce::String unit { " dB" };
