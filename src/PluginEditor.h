@@ -125,7 +125,10 @@ private:
     juce::Label nameLabel, profileLabel, statusLabel;
     MeterBar meter, outMeter;
     juce::TextButton regButton;
-    juce::TextButton moveUpButton { utf8("▲") }, moveDownButton { utf8("▼") };
+    // ArrowButton paints a triangle Path — no font, so it never truncates to
+    // "…" the way a tiny text button does. Direction: 0.75 = up, 0.25 = down.
+    juce::ArrowButton moveUpButton { "up", 0.75f, colours::subtext };
+    juce::ArrowButton moveDownButton { "down", 0.25f, colours::subtext };
     juce::Slider trimKnob;
     juce::ComboBox presetBox;
     juce::ToggleButton automationToggle;

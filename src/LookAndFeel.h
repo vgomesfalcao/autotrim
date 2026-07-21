@@ -99,6 +99,45 @@ public:
         return label;
     }
 
+    // Clean thin-arc rotary instead of JUCE's default filled pie wedge (which
+    // reads as an ugly two-tone blob at small sizes): a full background ring,
+    // an accent value arc, and a short pointer. Works at any diameter.
+    void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                          float sliderPos, float startAngle, float endAngle,
+                          juce::Slider& slider) override
+    {
+        const auto bounds =
+            juce::Rectangle<int>(x, y, width, height).toFloat().reduced(2.0f);
+        const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) / 2.0f;
+        const float cx = bounds.getCentreX(), cy = bounds.getCentreY();
+        const float thickness = juce::jmax(2.5f, radius * 0.22f);
+        const float angle = startAngle + sliderPos * (endAngle - startAngle);
+        const auto fill = slider.findColour(juce::Slider::rotarySliderFillColourId);
+
+        juce::Path bg;
+        bg.addCentredArc(cx, cy, radius, radius, 0.0f, startAngle, endAngle, true);
+        g.setColour(colours::cardOutline);
+        g.strokePath(bg, juce::PathStrokeType(thickness, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded));
+
+        if (sliderPos > 0.0f)
+        {
+            juce::Path arc;
+            arc.addCentredArc(cx, cy, radius, radius, 0.0f, startAngle, angle, true);
+            g.setColour(fill);
+            g.strokePath(arc, juce::PathStrokeType(thickness, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+        }
+
+        // Pointer from just inside the ring to the centre hub.
+        const float inner = radius - thickness;
+        juce::Point<float> tip(cx + std::sin(angle) * inner, cy - std::cos(angle) * inner);
+        juce::Point<float> hub(cx + std::sin(angle) * (inner * 0.35f),
+                               cy - std::cos(angle) * (inner * 0.35f));
+        g.setColour(colours::text);
+        g.drawLine({ hub, tip }, juce::jmax(1.5f, thickness * 0.5f));
+    }
+
     // The hero knob's readout is drawn as a chip: rounded card, accent bold
     // value — the single gain display of the plugin.
     void drawLabel(juce::Graphics& g, juce::Label& label) override

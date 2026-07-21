@@ -11,13 +11,8 @@ namespace
     constexpr int kChannelWidth = 460;
     constexpr int kPanelWidth = 860;
     constexpr int kPanelHeight = 616;
-    // Tall enough for a usable per-row gain knob (it was nearly invisible).
+    // Tall enough for a usable per-row gain knob and a two-line identity.
     constexpr int kRowHeight = 64;
-    constexpr int kColName = 160;
-    constexpr int kColPreset = 120;
-    constexpr int kColTrim = 148;
-    constexpr int kColAuto = 70;
-    constexpr int kColStatus = 130;
 
     juce::String formatDb(float db)
     {
@@ -226,8 +221,9 @@ void MeterBar::paint(juce::Graphics& g)
     // FabFilter / iZotope Insight convention. Keeping the number off the fill
     // gives it a constant dark background, so contrast never depends on the
     // gradient colour underneath (a translucent chip over the fill read as
-    // amateur). The bar's scale uses only the remaining width.
-    constexpr float kGutterW = 58.0f;
+    // amateur). The bar's scale uses only the remaining width; a bare-number
+    // gutter (no " dB" suffix, compact rows) is narrower so the bar breathes.
+    const float kGutterW = unit.isEmpty() ? 46.0f : 58.0f;
     auto gutter = full.removeFromRight(kGutterW);
     auto r = full;
     r.removeFromRight(6.0f); // gap between bar and gutter
@@ -709,24 +705,22 @@ void ChannelView::refresh()
 PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
 {
     meter.setTickVisible(false); // input level needs no moving mark
-    nameLabel.setFont(juce::Font(juce::FontOptions(16.0f)));
+    // Compact rows: bare number in the gutter (context already says dB).
+    meter.setUnit("");
+    outMeter.setUnit("");
+    nameLabel.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
     statusLabel.setFont(juce::Font(juce::FontOptions(13.0f)));
-    profileLabel.setFont(juce::Font(juce::FontOptions(11.5f)));
+    statusLabel.setJustificationType(juce::Justification::centredLeft);
+    profileLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     profileLabel.setColour(juce::Label::textColourId, colours::subtext);
 
-    for (auto* b : { &moveUpButton, &moveDownButton })
-    {
-        b->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        b->setColour(juce::TextButton::textColourOffId, colours::subtext);
-        b->setColour(juce::TextButton::textColourOnId, colours::subtext);
-    }
     moveUpButton.onClick = [this] { if (onMoveUp) onMoveUp(); };
     moveDownButton.onClick = [this] { if (onMoveDown) onMoveDown(); };
 
     // Manual gain knob for this channel, writing straight to its parameter.
     trimKnob.setName("row");
     trimKnob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    trimKnob.setTextBoxStyle(juce::Slider::TextBoxRight, false, 62, 18);
+    trimKnob.setTextBoxStyle(juce::Slider::TextBoxRight, false, 54, 18);
     trimKnob.setRange(-dsp::kTrimParamRangeDb, dsp::kTrimParamRangeDb, 0.1);
     trimKnob.setTextValueSuffix(" dB");
     trimKnob.setMouseDragSensitivity(400);
@@ -757,29 +751,60 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
 
 void PanelRow::resized()
 {
-    auto r = getLocalBounds().reduced(4);
-    auto moveCol = r.removeFromLeft(18);
-    moveUpButton.setBounds(moveCol.removeFromTop(moveCol.getHeight() / 2));
-    moveDownButton.setBounds(moveCol);
-    auto nameCol = r.removeFromLeft(kColName);
-    nameLabel.setBounds(nameCol.removeFromTop(nameCol.getHeight() * 3 / 5));
-    profileLabel.setBounds(nameCol);
-    statusLabel.setBounds(r.removeFromRight(kColStatus));
-    automationToggle.setBounds(r.removeFromRight(kColAuto).withSizeKeepingCentre(24, 24));
-    trimKnob.setBounds(r.removeFromRight(kColTrim).reduced(0, 2));
-    presetBox.setBounds(r.removeFromRight(kColPreset).reduced(0, 8));
-    auto meterArea = r.reduced(8, 5);
-    regButton.setBounds(meterArea.removeFromRight(46).reduced(2, 5));
-    meterArea.removeFromRight(6);
-    meter.setBounds(meterArea.removeFromTop((meterArea.getHeight() - 2) / 2));
-    meterArea.removeFromTop(2);
+    // Spacing scale: tight (8) within a group, generous (16/18) between the
+    // three groups — reorder+identity, monitoring (meters+Reg), controls.
+    auto r = getLocalBounds().reduced(10, 8);
+
+    // Reorder handle: the two arrows as a compact centred pair, quiet.
+    auto moveCol = r.removeFromLeft(14);
+    {
+        auto pair = moveCol.withSizeKeepingCentre(14, 30);
+        moveUpButton.setBounds(pair.removeFromTop(14));
+        moveDownButton.setBounds(pair.removeFromBottom(14));
+    }
+    r.removeFromLeft(12);
+
+    // Identity group: bold name over quiet profile, vertically centred.
+    auto nameCol = r.removeFromLeft(146);
+    {
+        auto block = nameCol.withSizeKeepingCentre(nameCol.getWidth(), 40);
+        nameLabel.setBounds(block.removeFromTop(23));
+        profileLabel.setBounds(block);
+    }
+    r.removeFromLeft(18);
+
+    // Controls group, laid out from the right so every row aligns.
+    statusLabel.setBounds(r.removeFromRight(116));
+    r.removeFromRight(10);
+    automationToggle.setBounds(r.removeFromRight(30).withSizeKeepingCentre(26, 26));
+    r.removeFromRight(12);
+    trimKnob.setBounds(r.removeFromRight(96).reduced(0, 6));
+    r.removeFromRight(14);
+    presetBox.setBounds(r.removeFromRight(112).reduced(0, 9));
+    r.removeFromRight(18); // generous gap = the group boundary (divider drawn here)
+
+    // Monitoring group: Reg next to the stacked in/out meters.
+    regButton.setBounds(r.removeFromRight(46).reduced(0, 7));
+    r.removeFromRight(10);
+    auto meterArea = r.reduced(0, 6);
+    const int gap = 3;
+    meter.setBounds(meterArea.removeFromTop((meterArea.getHeight() - gap) / 2));
+    meterArea.removeFromTop(gap);
     outMeter.setBounds(meterArea);
 }
 
 void PanelRow::paint(juce::Graphics& g)
 {
-    g.setColour(colours::cardOutline.withAlpha(0.5f));
-    g.fillRect(getLocalBounds().removeFromBottom(1));
+    // Subtle divider between the monitoring group and the controls group, so
+    // the eye reads two clusters instead of one undifferentiated strip. It
+    // sits just left of the preset box (matches the 18px gap in resized()).
+    const float dividerX = (float) (presetBox.getX() - 9);
+    g.setColour(colours::cardOutline.withAlpha(0.6f));
+    g.fillRect(dividerX, (float) (getHeight() / 2 - 12), 1.0f, 24.0f);
+
+    // Row separator.
+    g.setColour(colours::cardOutline.withAlpha(0.4f));
+    g.fillRect(0.0f, (float) (getHeight() - 1), (float) getWidth(), 1.0f);
 }
 
 void PanelRow::refresh()
