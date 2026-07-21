@@ -54,8 +54,8 @@ private:
     dsp::SlotAverager measAverager;
     dsp::MeasBudget measBudget;
     float measPeakMaxLin = 0.0f; // highest peak seen (for the "peak" algorithm)
-    int measCount = 0; // drum hits captured (ring below)
-    float measHitsDb[512] = {};
+    int measCount = 0; // peaks captured: drum hits, or continuous slots
+    float measPeaksDb[512] = {}; // all captured peaks (for the sporadic check)
     uint32_t measEpoch = 0;
     bool measStartedLocal = false;
     bool measBudgetArmed = false;

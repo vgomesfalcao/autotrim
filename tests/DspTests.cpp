@@ -430,24 +430,45 @@ int main()
         CHECK(det.inHit); // cooldown over: new hit
     }
 
-    // Slot averager: mean dB of program slots; pause slots never enter.
+    // Slot averager: mean dB of program slots plus the per-slot peak; pause
+    // slots never enter.
     {
         SlotAverager avg;
         const float arm = dbToGain(-50.0f);
         // Two blocks per 0.5 s slot (dt 0.25).
         avg.step(dbToGain(-6.0f), 0.25f, arm);
         auto a = avg.step(dbToGain(-6.0f), 0.25f, arm);
-        CHECK(a.has_value() && approx(*a, -6.0f));
+        CHECK(a.has_value() && approx(a->avgDb, -6.0f) && approx(a->slotPeakDb, -6.0f));
         avg.step(dbToGain(-12.0f), 0.25f, arm);
         a = avg.step(dbToGain(-12.0f), 0.25f, arm);
-        CHECK(a.has_value() && approx(*a, -9.0f)); // (-6 + -12) / 2
+        CHECK(a.has_value() && approx(a->avgDb, -9.0f)); // (-6 + -12) / 2
+        CHECK(approx(a->slotPeakDb, -12.0f));
         // Pause slot: below the arm threshold, average untouched.
         avg.step(0.0f, 0.25f, arm);
         a = avg.step(0.0f, 0.25f, arm);
         CHECK(! a.has_value());
         avg.step(dbToGain(-12.0f), 0.25f, arm);
         a = avg.step(dbToGain(-12.0f), 0.25f, arm);
-        CHECK(a.has_value() && approx(*a, -10.0f)); // (-6 -12 -12) / 3
+        CHECK(a.has_value() && approx(a->avgDb, -10.0f)); // (-6 -12 -12) / 3
+    }
+
+    // Frequent-peak protection: loud peaks that are FREQUENT (>=20%) mean the
+    // gain would run hot, so pull the level back to land the loudest at
+    // target+3; a rare stray peak keeps the mean.
+    {
+        // Mean -12; 2 of 5 peaks (40% >= 20%) sit >3 dB over the mean, max -4:
+        // frequent, so level rises to maxPeak-3 = -7.
+        const float frequent[5] = { -12.0f, -4.0f, -11.0f, -4.0f, -12.0f };
+        CHECK(approx(peakLimitedLevelDb(-12.0f, frequent, 5), -7.0f));
+        // Same mean, one lone loud peak at -4 out of 6 (1/6 ≈ 17% < 20%):
+        // sporadic, mean is kept.
+        const float sporadic[6] = { -12.0f, -13.0f, -11.0f, -4.0f, -12.0f, -12.0f };
+        CHECK(approx(peakLimitedLevelDb(-12.0f, sporadic, 6), -12.0f));
+        // No peak more than 3 dB over the mean: nothing to do.
+        const float tame[4] = { -12.0f, -10.0f, -11.0f, -13.0f };
+        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 4), -12.0f));
+        // Empty capture: mean returned unchanged.
+        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 0), -12.0f));
     }
 
     // Rider peak-hold window: holds the recent peak for the window length,

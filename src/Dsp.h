@@ -230,6 +230,39 @@ inline float gatedHitAverageDb(const float* hitsDb, int count)
     return kept > 0 ? sum / (float) kept : refDb;
 }
 
+// Frequent-peak protection (average measurement only). After calibrating to
+// the mean, if many captured peaks sit more than the margin above the mean,
+// the mean is *underselling* the material — the gain would end up too hot —
+// so the level is pulled back to make the loudest peak land at target +
+// margin. This kicks in only when those loud peaks are *frequent* (at least
+// kPeakFrequentFrac of all captured peaks exceed the mean by the margin); a
+// rare stray peak is left alone (the Clip Guard still catches real clipping).
+constexpr float kPeakOverTargetDb = 3.0f;
+constexpr float kPeakFrequentFrac = 0.20f;
+
+// Returns the level (dB) to calibrate against: normally the mean, but raised
+// to maxPeak − margin when loud peaks are frequent enough to mean the gain
+// would run hot. Since the trim is target − level, returning maxPeak − margin
+// makes the loudest peak land exactly at target + margin.
+inline float peakLimitedLevelDb(float meanDb, const float* peaksDb, int count)
+{
+    if (count <= 0)
+        return meanDb;
+    const float threshold = meanDb + kPeakOverTargetDb;
+    float maxDb = peaksDb[0];
+    int above = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        maxDb = std::max(maxDb, peaksDb[i]);
+        if (peaksDb[i] > threshold)
+            ++above;
+    }
+    const bool frequent = (float) above >= kPeakFrequentFrac * (float) count;
+    if (maxDb > threshold && frequent)
+        return maxDb - kPeakOverTargetDb;
+    return meanDb;
+}
+
 // Master loudness meter (panel instance): short-term LUFS per ITU-R BS.1770
 // (K-weighting + 3 s window), no gating (gating only applies to integrated).
 constexpr float kLufsTargetDb = -12.0f;
@@ -553,11 +586,17 @@ struct SlotAverager
         slotElapsed = 0.0f;
     }
 
-    // Feed once per block; returns the updated average (dB) at the slot
-    // boundaries that contained program.
-    std::optional<float> step(float blockPeakLin, float dt, float armLin)
+    struct Result
     {
-        std::optional<float> avgDb;
+        float avgDb;      // running mean of program-slot peaks
+        float slotPeakDb; // this slot's peak (fed to the sporadic-peak check)
+    };
+
+    // Feed once per block; returns a result at the slot boundaries that
+    // contained program (i.e. the slot peak crossed the arm threshold).
+    std::optional<Result> step(float blockPeakLin, float dt, float armLin)
+    {
+        std::optional<Result> result;
         slotPeak = std::max(slotPeak, blockPeakLin);
         slotElapsed += dt;
         if (slotElapsed >= kMeasSlotS)
@@ -565,13 +604,14 @@ struct SlotAverager
             slotElapsed = 0.0f;
             if (slotPeak > armLin)
             {
-                sumDb += gainToDb(slotPeak);
+                const float pk = gainToDb(slotPeak);
+                sumDb += pk;
                 ++count;
-                avgDb = sumDb / (float) count;
+                result = Result { sumDb / (float) count, pk };
             }
             slotPeak = 0.0f;
         }
-        return avgDb;
+        return result;
     }
 };
 
