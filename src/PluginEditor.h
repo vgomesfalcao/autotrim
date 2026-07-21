@@ -42,6 +42,7 @@ private:
     bool agcTint = false;
     float holdDb = -200.0f;
     double holdSetMs = 0.0;
+    double holdLastStepMs = 0.0; // dt anchor for the fall, independent of holdSetMs
     float textDb = -200.0f;
     double textSetMs = 0.0;
 };

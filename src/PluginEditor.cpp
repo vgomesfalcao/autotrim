@@ -126,6 +126,12 @@ namespace
     constexpr float kMeterZoomStartFrac = 0.22f;
     constexpr float kMeterHotFrac = 0.88f;
     constexpr float kMeterOverheadDb = 6.0f; // headroom shown past the hot point
+
+    // Peak-hold marker: freezes at the recent peak, then falls slowly enough
+    // to read as a calm reference instead of a blur that vanishes into the
+    // live level.
+    constexpr float kPeakHoldTimeS = 2.0f;
+    constexpr float kPeakHoldFallDbPerS = 6.0f;
 } // namespace
 
 void MeterBar::setLevelLin(float newLevelLin)
@@ -135,18 +141,25 @@ void MeterBar::setLevelLin(float newLevelLin)
     bool dirty = std::abs(newDb - levelDb) > 0.05f;
     levelDb = newDb;
 
-    // Peak hold: grabs new maxima instantly, holds 2 s, then falls ~30 dB/s.
+    // Peak hold: grabs new maxima instantly, holds kPeakHoldTimeS, then falls
+    // at kPeakHoldFallDbPerS — slow and visually distinct enough to read as a
+    // calm reference instead of a blur that chases the live level.
     if (newDb >= holdDb)
     {
         if (std::abs(newDb - holdDb) > 0.05f)
             dirty = true;
         holdDb = newDb;
         holdSetMs = now;
+        holdLastStepMs = now;
     }
-    else if (now - holdSetMs > 2000.0)
+    else if (now - holdSetMs > kPeakHoldTimeS * 1000.0)
     {
-        holdDb = juce::jmax(newDb, holdDb - 1.0f);
-        dirty = true;
+        const double dtS = juce::jmax(0.0, now - holdLastStepMs) / 1000.0;
+        holdLastStepMs = now;
+        const float fallen = juce::jmax(newDb, holdDb - (float) (kPeakHoldFallDbPerS * dtS));
+        if (std::abs(fallen - holdDb) > 0.005f)
+            dirty = true;
+        holdDb = fallen;
     }
 
     // Numeric readout refreshes twice a second so it can actually be read.
@@ -234,15 +247,18 @@ void MeterBar::paint(juce::Graphics& g)
         }
     }
 
-    // Peak-hold marker: the calm reference to compare against the target.
+    // Peak-hold marker: protrudes past the bar and uses a colour that never
+    // blends with the fill (bright neutral, or red above target) — it needs
+    // to read as a distinct flag even when it lands right at the fill edge.
     if (holdDb > -90.0f)
     {
         const float holdFrac = juce::jlimit(0.0f, 1.0f, mapDbToFrac(holdDb));
         if (holdFrac > 0.01f)
         {
             const float holdX = r.getX() + r.getWidth() * holdFrac;
-            g.setColour(holdDb > tickDb + 0.5f ? colours::meterHigh : colours::accent);
-            g.fillRect(holdX - 1.5f, r.getY() + 1.0f, 3.0f, r.getHeight() - 2.0f);
+            g.setColour(holdDb > tickDb + 0.5f ? colours::meterHigh : colours::text);
+            g.fillRect(holdX - 1.5f, r.getY() - 3.0f, 3.0f, r.getHeight() + 6.0f);
+            g.fillRect(holdX - 3.5f, r.getY() - 3.0f, 7.0f, 2.5f); // flag head
         }
     }
 
