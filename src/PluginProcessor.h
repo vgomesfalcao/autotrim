@@ -53,6 +53,7 @@ private:
     // the average of peaks (slot peaks, or gated hit peaks for drums).
     dsp::SlotAverager measAverager;
     dsp::MeasBudget measBudget;
+    float measPeakMaxLin = 0.0f; // highest peak seen (for the "peak" algorithm)
     int measCount = 0; // drum hits captured (ring below)
     float measHitsDb[512] = {};
     uint32_t measEpoch = 0;

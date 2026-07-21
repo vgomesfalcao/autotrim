@@ -257,7 +257,7 @@ void MeterBar::paint(juce::Graphics& g)
     // Peak-hold marker: protrudes past the bar and uses a colour that never
     // blends with the fill (bright neutral, or red above target) — it needs
     // to read as a distinct flag even when it lands right at the fill edge.
-    if (holdDb > -90.0f)
+    if (peakHoldEnabled && holdDb > -90.0f)
     {
         const float holdFrac = juce::jlimit(0.0f, 1.0f, mapDbToFrac(holdDb));
         if (holdFrac > 0.01f)
@@ -406,7 +406,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
       automationAttachment(proc.apvts, "automation", automationToggle),
       riderAttachment(proc.apvts, "rider", riderToggle),
       clipGuardAttachment(proc.apvts, "clipguard", clipGuardToggle),
-      agcAttachment(proc.apvts, "agc", agcToggle)
+      agcAttachment(proc.apvts, "agc", agcToggle),
+      peakModeAttachment(proc.apvts, "peakmode", peakModeToggle)
 {
     styleTitle(title, "AutoTrim");
     styleCaption(nameCaption, "Nome do canal");
@@ -427,7 +428,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     trimCaption.setColour(juce::Label::textColourId, colours::text);
     trimCaption.setJustificationType(juce::Justification::centred);
 
-    meter.setTickVisible(false); // input level needs no moving mark
+    meter.setTickVisible(false);      // input level needs no moving mark
+    meter.setPeakHoldEnabled(false);  // nor a peak-hold / red over-target flag
 
     nameEditor.setFont(juce::Font(juce::FontOptions(17.0f)));
     nameEditor.setJustification(juce::Justification::centredLeft);
@@ -499,7 +501,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                          (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
                          (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
                          (juce::Component*) &agcRangeCaption, (juce::Component*) &agcRangeSlider,
-                         (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
+                         (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle,
+                         (juce::Component*) &peakModeToggle })
             c->setVisible(advancedOpen);
         resized();
         repaint();
@@ -519,7 +522,7 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
              &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &clipGuardToggle,
-             &agcToggle, &panelToggle, &advancedButton, &measureButton })
+             &agcToggle, &peakModeToggle, &panelToggle, &advancedButton, &measureButton })
         addAndMakeVisible(c);
 
     // "Avançado" starts collapsed.
@@ -528,7 +531,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
                      (juce::Component*) &speedCaption, (juce::Component*) &speedSlider,
                      (juce::Component*) &agcTimeCaption, (juce::Component*) &agcTimeSlider,
                      (juce::Component*) &agcRangeCaption, (juce::Component*) &agcRangeSlider,
-                     (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle })
+                     (juce::Component*) &clipGuardToggle, (juce::Component*) &agcToggle,
+                     (juce::Component*) &peakModeToggle })
         c->setVisible(false);
 }
 
@@ -557,8 +561,8 @@ void ChannelView::resized()
     measureButton.setBounds(r.removeFromTop(34));
     r.removeFromTop(14);
 
-    // Set-once configuration card ("Avançado" adds four collapsed rows)
-    configCard = r.removeFromTop(advancedOpen ? 422 : 282);
+    // Set-once configuration card ("Avançado" adds the collapsed rows)
+    configCard = r.removeFromTop(advancedOpen ? 456 : 282);
     auto card = configCard.reduced(16, 14);
     sectionLabel.setBounds(card.removeFromTop(18));
     card.removeFromTop(12);
@@ -600,6 +604,8 @@ void ChannelView::resized()
         auto toggleRow = card.removeFromTop(28);
         clipGuardToggle.setBounds(toggleRow.removeFromLeft(toggleRow.getWidth() / 2));
         agcToggle.setBounds(toggleRow);
+        card.removeFromTop(6);
+        peakModeToggle.setBounds(card.removeFromTop(28));
     }
     r.removeFromTop(14);
 
@@ -617,7 +623,7 @@ int ChannelView::desiredHeight() const
 {
     // Fixed sections (title, name row, meters, status strip, gaps, panel
     // toggle, margins) plus the config card, which follows the disclosure.
-    return 382 + (advancedOpen ? 422 : 282);
+    return 382 + (advancedOpen ? 456 : 282);
 }
 
 void ChannelView::paint(juce::Graphics& g)
@@ -704,7 +710,8 @@ void ChannelView::refresh()
 //==============================================================================
 PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(channel))
 {
-    meter.setTickVisible(false); // input level needs no moving mark
+    meter.setTickVisible(false);      // input level needs no moving mark
+    meter.setPeakHoldEnabled(false);  // nor a peak-hold / red over-target flag
     // Compact rows: bare number in the gutter (context already says dB).
     meter.setUnit("");
     outMeter.setUnit("");

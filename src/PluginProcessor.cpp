@@ -54,6 +54,11 @@ namespace
             NormalisableRange<float>(dsp::kSpeedMinDbPerS, dsp::kSpeedMaxDbPerS, 0.1f),
             dsp::kProfiles[1].upDbPerS,
             AudioParameterFloatAttributes().withLabel("dB/s")));
+        // Measurement algorithm: false = average (default), true = highest
+        // peak. Per channel; some sources calibrate better on the loudest
+        // moment than on the typical level.
+        layout.add(std::make_unique<AudioParameterBool>(
+            ParameterID { "peakmode", 1 }, "Medir por pico", false));
         return layout;
     }
 } // namespace
@@ -76,6 +81,7 @@ AutoTrimProcessor::AutoTrimProcessor()
     shared->profile = apvts.getRawParameterValue("profile");
     shared->sensitivityDb = apvts.getRawParameterValue("sens");
     shared->speedDbPerS = apvts.getRawParameterValue("speed");
+    shared->measPeakMode = apvts.getRawParameterValue("peakmode");
     shared->targetParam = apvts.getParameter("target");
     shared->trimParam = apvts.getParameter("trim");
     shared->automationParam = apvts.getParameter("automation");
@@ -228,6 +234,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const bool agcOn = automationOn && shared->agcOn->load() > 0.5f;
     const bool clipGuardOn = automationOn && shared->clipGuardOn->load() > 0.5f;
     const bool measuring = shared->measuring.load();
+    // Measurement algorithm for this channel: average (default) vs highest peak.
+    const bool peakMode = shared->measPeakMode->load() > 0.5f;
     const float trimDb = shared->trimDb->load();
     const auto& profile = dsp::profileFor((int) shared->profile->load());
     const float sensDb = shared->sensitivityDb->load();
@@ -279,11 +287,15 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             {
                 // Each hit's peak enters the gated average: hits far below
                 // the strong ones (bleed, ghost notes) are dropped so they
-                // never drag the measured level down.
+                // never drag the measured level down. Peak mode instead keeps
+                // the single loudest hit.
                 measHitsDb[measCount % dsp::kMeasMaxHits] = dsp::gainToDb(*hit);
                 ++measCount;
-                shared->measuredPeak.store(dsp::dbToGain(dsp::gatedHitAverageDb(
-                    measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
+                measPeakMaxLin = juce::jmax(measPeakMaxLin, *hit);
+                shared->measuredPeak.store(
+                    peakMode ? measPeakMaxLin
+                             : dsp::dbToGain(dsp::gatedHitAverageDb(
+                                 measHitsDb, juce::jmin(measCount, dsp::kMeasMaxHits))));
                 shared->measHitCount.store((uint32_t) measCount);
             }
             if (hitDetector.inHit && ! measStartedLocal)
@@ -316,6 +328,7 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     {
         measEpoch = epoch;
         measAverager.reset();
+        measPeakMaxLin = 0.0f;
         measCount = 0;
         measStartedLocal = false;
         measBudgetArmed = false;
@@ -387,10 +400,21 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
                     measBudget.arm(registry::measDurationS.load(), currentSampleRate);
                 }
 
-                // Average of 0.5 s slot peaks above the arm threshold: the
-                // trim calibrates the typical peak, not the loudest moment.
-                if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
+                // Average mode: mean of 0.5 s slot peaks above the arm
+                // threshold — the trim calibrates the typical peak. Peak mode:
+                // the single loudest block instead (updated every block).
+                if (peakMode)
+                {
+                    if (blockPeak > measArmLin)
+                    {
+                        measPeakMaxLin = juce::jmax(measPeakMaxLin, blockPeak);
+                        shared->measuredPeak.store(measPeakMaxLin);
+                    }
+                }
+                else if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
+                {
                     shared->measuredPeak.store(dsp::dbToGain(*avgDb));
+                }
 
                 if (measBudget.step(numSamples, blockPeak > measArmLin))
                 {

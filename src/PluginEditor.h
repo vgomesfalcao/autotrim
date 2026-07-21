@@ -26,6 +26,10 @@ public:
     // for the input meter); moves freely within the fixed scale.
     void setTickDb(float newTickDb);
     void setTickVisible(bool shouldShow) { tickVisible = shouldShow; }
+    // The input meter shows only the live level — no peak-hold flag (and thus
+    // no red "over target" marker; the input isn't something to keep under a
+    // target, it's just what's arriving).
+    void setPeakHoldEnabled(bool shouldHold) { peakHoldEnabled = shouldHold; }
     void setUnit(const juce::String& newUnit) { unit = newUnit; }
     // Yellow fill while an AGC correction is acting on this channel.
     void setAgcTint(bool shouldTint);
@@ -38,6 +42,7 @@ private:
     float hotDb = 0.0f;
     float tickDb = -10.0f;
     bool tickVisible = true;
+    bool peakHoldEnabled = true;
     juce::String unit { " dB" };
     // Console-style readability: peak-hold marker (compare against the target
     // calmly) and a slow-refresh numeric readout.
@@ -98,12 +103,13 @@ private:
         riderToggle { utf8("Rider (modo contínuo)") },
         clipGuardToggle { utf8("Clip Guard (corte anti-clip)") },
         agcToggle { utf8("AGC (reajuste do ganho)") },
+        peakModeToggle { utf8("Medir pelo pico mais alto (em vez da média)") },
         panelToggle { utf8("Usar esta instância como painel de controle") };
 
     juce::AudioProcessorValueTreeState::SliderAttachment targetAttachment, trimAttachment,
         sensAttachment, speedAttachment, agcTimeAttachment, agcRangeAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment automationAttachment, riderAttachment,
-        clipGuardAttachment, agcAttachment;
+        clipGuardAttachment, agcAttachment, peakModeAttachment;
     // Created after the box is populated (attachment applies the stored value).
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> profileAttachment;
 };

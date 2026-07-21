@@ -71,6 +71,7 @@ struct ChannelShared
     std::atomic<float>* profile = nullptr;     // index into dsp::kProfiles
     std::atomic<float>* sensitivityDb = nullptr;
     std::atomic<float>* speedDbPerS = nullptr; // rider ride-up rate
+    std::atomic<float>* measPeakMode = nullptr; // measurement: 0 = average, 1 = highest peak
 
     // Parameter objects for writes from the message thread (panel/measurement).
     juce::RangedAudioParameter* targetParam = nullptr;
