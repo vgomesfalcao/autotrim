@@ -82,6 +82,17 @@ void startChannel(const std::shared_ptr<ChannelShared>& channel, float)
     begin();
 }
 
+void resetAll()
+{
+    if (running)
+        cancel();
+    for (auto& ch : registry::channels())
+    {
+        applyTrim(*ch, 0.0f); // Ganho -> 0 dB, clears rider/AGC/protection
+        ch->noSignal.store(false);
+    }
+}
+
 void cancel()
 {
     if (! running)

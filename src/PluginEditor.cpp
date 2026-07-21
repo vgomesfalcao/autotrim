@@ -1074,6 +1074,24 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     cancelButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
     cancelButton.setColour(juce::TextButton::textColourOffId, colours::text);
 
+    // Zeroing every channel's Ganho discards the whole calibration — confirm
+    // first so a mis-click can't wipe the show mid-set.
+    resetButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+    resetButton.setColour(juce::TextButton::textColourOffId, colours::warning);
+    resetButton.onClick = []
+    {
+        auto options =
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle(utf8("Zerar ganhos"))
+                .withMessage(utf8("Coloca o Ganho de todos os canais em 0 dB e limpa "
+                                  "rider/AGC/proteção. A calibração atual será perdida."))
+                .withButton(utf8("Zerar"))
+                .withButton(utf8("Cancelar"));
+        juce::AlertWindow::showAsync(options, [](int result)
+                                     { if (result == 1) measurement::resetAll(); });
+    };
+
     compactButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
     compactButton.setColour(juce::TextButton::textColourOffId, colours::text);
     compactButton.onClick = [this] { proc.shared->panelCompact.store(true); };
@@ -1099,8 +1117,8 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 
     for (auto* c : std::initializer_list<juce::Component*> {
              &title, &durationCaption, &hitsCaption, &maxTrimCaption, &durationSlider,
-             &hitsSlider, &maxTrimSlider, &measureButton, &cancelButton, &progressBar, &viewport,
-             &emptyLabel, &panelToggle, &compactButton })
+             &hitsSlider, &maxTrimSlider, &measureButton, &cancelButton, &resetButton,
+             &progressBar, &viewport, &emptyLabel, &panelToggle, &compactButton })
         addAndMakeVisible(c);
     progressBar.setVisible(false);
     cancelButton.setVisible(false);
@@ -1126,6 +1144,8 @@ void PanelView::resized()
     r.removeFromTop(12);
 
     auto actionRow = r.removeFromTop(36);
+    resetButton.setBounds(actionRow.removeFromRight(140));
+    actionRow.removeFromRight(10);
     measureButton.setBounds(actionRow);
     cancelButton.setBounds(actionRow.removeFromRight(110));
     progressBar.setBounds(actionRow.withTrimmedRight(8));

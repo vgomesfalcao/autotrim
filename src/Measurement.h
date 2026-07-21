@@ -17,6 +17,9 @@ void start(float durationS);
 // Measure a single channel (in-plugin action); no-signal still leaves the
 // gain untouched.
 void startChannel(const std::shared_ptr<ChannelShared>& channel, float durationS);
+// Sets every channel's Ganho back to 0 dB and clears rider/AGC/protection
+// offsets (panel action). Cancels any running measurement first.
+void resetAll();
 void cancel();
 // Applies trims when the window has elapsed.
 void poll();

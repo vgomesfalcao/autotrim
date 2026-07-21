@@ -194,6 +194,7 @@ private:
     juce::Slider durationSlider, hitsSlider, maxTrimSlider;
     juce::TextButton measureButton { "Regular ganhos de todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };
+    juce::TextButton resetButton { "Zerar ganhos" };
     juce::TextButton compactButton { "Modo compacto" };
     double progressValue = 0.0;
     juce::ProgressBar progressBar { progressValue };
