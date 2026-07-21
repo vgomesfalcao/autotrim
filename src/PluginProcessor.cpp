@@ -384,7 +384,8 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             {
                 const float meanDb = dsp::gainToDb(shared->measuredPeak.load());
                 const float level = dsp::peakLimitedLevelDb(
-                    meanDb, measPeaksDb, juce::jmin(measCount, dsp::kMeasMaxHits));
+                    meanDb, measPeaksDb, juce::jmin(measCount, dsp::kMeasMaxHits),
+                    registry::peakFrequentPct.load() / 100.0f);
                 shared->measuredPeak.store(dsp::dbToGain(level));
             }
             shared->measuring.store(false);
@@ -586,6 +587,7 @@ void AutoTrimProcessor::getStateInformation(juce::MemoryBlock& destData)
     state.setProperty("maxTrimDb", registry::maxTrimDb.load(), nullptr);
     state.setProperty("measDurationS", registry::measDurationS.load(), nullptr);
     state.setProperty("measHits", registry::measHits.load(), nullptr);
+    state.setProperty("peakFrequentPct", registry::peakFrequentPct.load(), nullptr);
 
     juce::MemoryOutputStream stream(destData, false);
     state.writeToStream(stream);
@@ -614,6 +616,8 @@ void AutoTrimProcessor::setStateInformation(const void* data, int sizeInBytes)
             "measDurationS", (double) dsp::kDefaultMeasDurationS));
         registry::measHits.store(
             (int) state.getProperty("measHits", dsp::kDefaultMeasHits));
+        registry::peakFrequentPct.store(
+            (int) state.getProperty("peakFrequentPct", dsp::kDefaultPeakFrequentPct));
     }
 }
 } // namespace autotrim

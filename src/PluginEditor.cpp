@@ -1072,6 +1072,7 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     styleTitle(title, utf8("AutoTrim — Painel de Controle"));
     styleCaption(durationCaption, utf8("Medição — instrumentos (s)"));
     styleCaption(hitsCaption, utf8("Medição — bateria (batidas)"));
+    styleCaption(peakPctCaption, utf8("Picos frequentes (%)"));
     styleCaption(maxTrimCaption, utf8("Limite de trim (±)"));
     styleCaption(listHeader,
                  utf8("Canal                                     Entrada (cima) / Saída (baixo)"));
@@ -1089,6 +1090,13 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     hitsSlider.setValue(registry::measHits.load(), juce::dontSendNotification);
     hitsSlider.onValueChange = [this]
     { registry::measHits.store((int) hitsSlider.getValue()); };
+
+    styleHSlider(peakPctSlider);
+    peakPctSlider.setRange((double) dsp::kPeakFrequentPctMin, (double) dsp::kPeakFrequentPctMax, 1.0);
+    peakPctSlider.setTextValueSuffix(" %");
+    peakPctSlider.setValue(registry::peakFrequentPct.load(), juce::dontSendNotification);
+    peakPctSlider.onValueChange = [this]
+    { registry::peakFrequentPct.store((int) peakPctSlider.getValue()); };
 
     styleHSlider(maxTrimSlider);
     maxTrimSlider.setRange(1.0, (double) dsp::kTrimParamRangeDb, 0.5);
@@ -1144,8 +1152,9 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     viewport.setScrollBarsShown(true, false);
 
     for (auto* c : std::initializer_list<juce::Component*> {
-             &title, &durationCaption, &hitsCaption, &maxTrimCaption, &durationSlider,
-             &hitsSlider, &maxTrimSlider, &measureButton, &cancelButton, &resetButton,
+             &title, &durationCaption, &hitsCaption, &peakPctCaption, &maxTrimCaption,
+             &durationSlider, &hitsSlider, &peakPctSlider, &maxTrimSlider, &measureButton,
+             &cancelButton, &resetButton,
              &progressBar, &viewport, &emptyLabel, &panelToggle, &compactButton })
         addAndMakeVisible(c);
     progressBar.setVisible(false);
@@ -1159,16 +1168,19 @@ void PanelView::resized()
     r.removeFromTop(10);
 
     auto controls = r.removeFromTop(52);
-    const int colW = controls.getWidth() / 3;
+    const int colW = controls.getWidth() / 4;
     auto colA = controls.removeFromLeft(colW).withTrimmedRight(10);
-    auto colB = controls.removeFromLeft(colW).withTrimmedRight(10).withTrimmedLeft(2);
-    auto colC = controls.withTrimmedLeft(10);
+    auto colB = controls.removeFromLeft(colW).withTrimmedRight(10);
+    auto colC = controls.removeFromLeft(colW).withTrimmedRight(10);
+    auto colD = controls;
     durationCaption.setBounds(colA.removeFromTop(18));
     durationSlider.setBounds(colA);
     hitsCaption.setBounds(colB.removeFromTop(18));
     hitsSlider.setBounds(colB);
-    maxTrimCaption.setBounds(colC.removeFromTop(18));
-    maxTrimSlider.setBounds(colC);
+    peakPctCaption.setBounds(colC.removeFromTop(18));
+    peakPctSlider.setBounds(colC);
+    maxTrimCaption.setBounds(colD.removeFromTop(18));
+    maxTrimSlider.setBounds(colD);
     r.removeFromTop(12);
 
     auto actionRow = r.removeFromTop(36);

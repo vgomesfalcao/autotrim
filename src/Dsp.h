@@ -235,16 +235,21 @@ inline float gatedHitAverageDb(const float* hitsDb, int count)
 // the mean is *underselling* the material — the gain would end up too hot —
 // so the level is pulled back to make the loudest peak land at target +
 // margin. This kicks in only when those loud peaks are *frequent* (at least
-// kPeakFrequentFrac of all captured peaks exceed the mean by the margin); a
-// rare stray peak is left alone (the Clip Guard still catches real clipping).
+// the frequent fraction of all captured peaks exceed the mean by the margin);
+// a rare stray peak is left alone (the Clip Guard still catches real
+// clipping). The fraction is a per-session panel setting (default 10%).
 constexpr float kPeakOverTargetDb = 3.0f;
-constexpr float kPeakFrequentFrac = 0.20f;
+constexpr int kDefaultPeakFrequentPct = 10;
+constexpr int kPeakFrequentPctMin = 5;
+constexpr int kPeakFrequentPctMax = 50;
 
 // Returns the level (dB) to calibrate against: normally the mean, but raised
 // to maxPeak − margin when loud peaks are frequent enough to mean the gain
 // would run hot. Since the trim is target − level, returning maxPeak − margin
-// makes the loudest peak land exactly at target + margin.
-inline float peakLimitedLevelDb(float meanDb, const float* peaksDb, int count)
+// makes the loudest peak land exactly at target + margin. frequentFrac is the
+// fraction of captured peaks that must exceed the mean by the margin for the
+// pull-back to fire (per-session panel setting, default 10%).
+inline float peakLimitedLevelDb(float meanDb, const float* peaksDb, int count, float frequentFrac)
 {
     if (count <= 0)
         return meanDb;
@@ -257,7 +262,7 @@ inline float peakLimitedLevelDb(float meanDb, const float* peaksDb, int count)
         if (peaksDb[i] > threshold)
             ++above;
     }
-    const bool frequent = (float) above >= kPeakFrequentFrac * (float) count;
+    const bool frequent = (float) above >= frequentFrac * (float) count;
     if (maxDb > threshold && frequent)
         return maxDb - kPeakOverTargetDb;
     return meanDb;

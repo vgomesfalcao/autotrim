@@ -21,6 +21,7 @@ namespace registry
     std::atomic<float> maxTrimDb { dsp::kDefaultMaxTrimDb };
     std::atomic<float> measDurationS { dsp::kDefaultMeasDurationS };
     std::atomic<int> measHits { dsp::kDefaultMeasHits };
+    std::atomic<int> peakFrequentPct { dsp::kDefaultPeakFrequentPct };
 
     namespace
     {

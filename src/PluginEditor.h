@@ -198,10 +198,10 @@ public:
 private:
     AutoTrimProcessor& proc;
 
-    juce::Label title, durationCaption, hitsCaption, maxTrimCaption, listHeader, emptyLabel,
-        lufsCaption;
+    juce::Label title, durationCaption, hitsCaption, peakPctCaption, maxTrimCaption, listHeader,
+        emptyLabel, lufsCaption;
     MeterBar lufsMeter;
-    juce::Slider durationSlider, hitsSlider, maxTrimSlider;
+    juce::Slider durationSlider, hitsSlider, peakPctSlider, maxTrimSlider;
     juce::TextButton measureButton { "Regular ganhos de todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };
     juce::TextButton resetButton { "Zerar ganhos" };

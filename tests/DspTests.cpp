@@ -452,23 +452,32 @@ int main()
         CHECK(a.has_value() && approx(a->avgDb, -10.0f)); // (-6 -12 -12) / 3
     }
 
-    // Frequent-peak protection: loud peaks that are FREQUENT (>=20%) mean the
-    // gain would run hot, so pull the level back to land the loudest at
-    // target+3; a rare stray peak keeps the mean.
+    // Frequent-peak protection: loud peaks that are FREQUENT mean the gain
+    // would run hot, so pull the level back to land the loudest at target+3; a
+    // rare stray peak keeps the mean. The frequent fraction is now a parameter
+    // (default 10%); these cases pass 0.20f to keep the 20% semantics.
     {
         // Mean -12; 2 of 5 peaks (40% >= 20%) sit >3 dB over the mean, max -4:
         // frequent, so level rises to maxPeak-3 = -7.
         const float frequent[5] = { -12.0f, -4.0f, -11.0f, -4.0f, -12.0f };
-        CHECK(approx(peakLimitedLevelDb(-12.0f, frequent, 5), -7.0f));
+        CHECK(approx(peakLimitedLevelDb(-12.0f, frequent, 5, 0.20f), -7.0f));
         // Same mean, one lone loud peak at -4 out of 6 (1/6 ≈ 17% < 20%):
         // sporadic, mean is kept.
         const float sporadic[6] = { -12.0f, -13.0f, -11.0f, -4.0f, -12.0f, -12.0f };
-        CHECK(approx(peakLimitedLevelDb(-12.0f, sporadic, 6), -12.0f));
+        CHECK(approx(peakLimitedLevelDb(-12.0f, sporadic, 6, 0.20f), -12.0f));
         // No peak more than 3 dB over the mean: nothing to do.
         const float tame[4] = { -12.0f, -10.0f, -11.0f, -13.0f };
-        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 4), -12.0f));
+        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 4, 0.20f), -12.0f));
         // Empty capture: mean returned unchanged.
-        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 0), -12.0f));
+        CHECK(approx(peakLimitedLevelDb(-12.0f, tame, 0, 0.20f), -12.0f));
+        // Lower threshold makes a sparse peak count: mean -12, 1 of 8 peaks
+        // (12.5%) at -5 sits >3 dB over the mean, max -5. With 0.20f it is
+        // sporadic (12.5% < 20%, keeps the mean -12), but with 0.10f it is
+        // frequent (12.5% >= 10%), so the level rises to maxPeak-3 = -8.
+        const float border[8] = { -12.0f, -12.0f, -5.0f, -12.0f,
+                                  -12.0f, -12.0f, -12.0f, -12.0f };
+        CHECK(approx(peakLimitedLevelDb(-12.0f, border, 8, 0.20f), -12.0f));
+        CHECK(approx(peakLimitedLevelDb(-12.0f, border, 8, 0.10f), -8.0f));
     }
 
     // Rider peak-hold window: holds the recent peak for the window length,

@@ -105,5 +105,6 @@ namespace registry
     extern std::atomic<float> maxTrimDb;
     extern std::atomic<float> measDurationS; // sustained-instrument window
     extern std::atomic<int> measHits;        // percussive (drum) hit count
+    extern std::atomic<int> peakFrequentPct; // % of peaks that counts as "frequent"
 } // namespace registry
 } // namespace autotrim
