@@ -355,41 +355,48 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (measuring)
     {
-        // Every profile measures for the full window, but the window is a
-        // budget of *programme* time (see the pause below), not wall clock —
-        // only what enters the average differs (slot peaks vs. per-hit
-        // peaks). Drums arm in the sample loop on the first hit; continuous
-        // profiles arm here.
-        if (! profile.hitBased && ! measStartedLocal && blockPeak > measArmLin)
+        if (profile.hitBased)
         {
-            measStartedLocal = true;
-            shared->measStarted.store(true);
-        }
-        if (measStartedLocal)
-        {
-            if (! measBudgetArmed)
-            {
-                measBudgetArmed = true;
-                measBudget.arm(registry::measDurationS.load(), currentSampleRate);
-            }
-
-            if (! profile.hitBased)
-            {
-                // Average of 0.5 s slot peaks above the arm threshold: the
-                // trim calibrates the typical peak, not the loudest moment,
-                // and pauses never drag the average down.
-                if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
-                    shared->measuredPeak.store(dsp::dbToGain(*avgDb));
-            }
-
-            // The window only counts *programme* time: a block below the
-            // sensitivity pauses it instead of burning through the budget,
-            // so a source with gaps still gets a full window of real signal
-            // (this is what lets the default duration be short).
-            if (measBudget.step(numSamples, blockPeak > measArmLin))
+            // Percussive sources close by a HIT COUNT, wholly independent of
+            // the seconds window: a tom plays at isolated moments, so N clean
+            // hits is the meaningful stop condition. Hits are detected and
+            // averaged (with the bleed gate) in the sample loop above; here we
+            // just check whether enough have been captured.
+            if (measStartedLocal && measCount >= registry::measHits.load())
             {
                 shared->measuring.store(false);
                 shared->measDone.store(true);
+            }
+        }
+        else
+        {
+            // Sustained instruments measure a seconds window that only counts
+            // *programme* time: a block below the sensitivity pauses it instead
+            // of burning through the budget, so a source with gaps still gets a
+            // full window of real signal (this is what lets it be short).
+            if (! measStartedLocal && blockPeak > measArmLin)
+            {
+                measStartedLocal = true;
+                shared->measStarted.store(true);
+            }
+            if (measStartedLocal)
+            {
+                if (! measBudgetArmed)
+                {
+                    measBudgetArmed = true;
+                    measBudget.arm(registry::measDurationS.load(), currentSampleRate);
+                }
+
+                // Average of 0.5 s slot peaks above the arm threshold: the
+                // trim calibrates the typical peak, not the loudest moment.
+                if (const auto avgDb = measAverager.step(blockPeak, dt, measArmLin))
+                    shared->measuredPeak.store(dsp::dbToGain(*avgDb));
+
+                if (measBudget.step(numSamples, blockPeak > measArmLin))
+                {
+                    shared->measuring.store(false);
+                    shared->measDone.store(true);
+                }
             }
         }
     }
@@ -534,6 +541,7 @@ void AutoTrimProcessor::getStateInformation(juce::MemoryBlock& destData)
     // instance restores them, so a channel's stale copy never wins.
     state.setProperty("maxTrimDb", registry::maxTrimDb.load(), nullptr);
     state.setProperty("measDurationS", registry::measDurationS.load(), nullptr);
+    state.setProperty("measHits", registry::measHits.load(), nullptr);
 
     juce::MemoryOutputStream stream(destData, false);
     state.writeToStream(stream);
@@ -560,6 +568,8 @@ void AutoTrimProcessor::setStateInformation(const void* data, int sizeInBytes)
             "maxTrimDb", (double) dsp::kDefaultMaxTrimDb));
         registry::measDurationS.store((float) (double) state.getProperty(
             "measDurationS", (double) dsp::kDefaultMeasDurationS));
+        registry::measHits.store(
+            (int) state.getProperty("measHits", dsp::kDefaultMeasHits));
     }
 }
 } // namespace autotrim

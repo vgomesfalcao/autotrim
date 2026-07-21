@@ -181,6 +181,14 @@ constexpr float kMeasArmTimeoutS = 90.0f;
 // average the peaks of every hit captured during the window.
 constexpr float kMeasSlotS = 0.5f;
 
+// Percussive (drum) sources measure by a *hit count*, not the seconds window
+// used for sustained instruments: a tom or surdo plays at isolated moments,
+// so "N clean hits captured" is the meaningful stop condition, independent of
+// wall-clock time. Editable in the panel alongside the seconds field.
+constexpr int kDefaultMeasHits = 15;
+constexpr int kMeasHitsMin = 3;
+constexpr int kMeasHitsMax = 60;
+
 // Drum measurement: hits more than this far below the reference are bleed or
 // ghost notes, not direct hits — real strong hits of one drum cluster within
 // ~5-6 dB, while ghost notes sit 10-20 dB under the accents.

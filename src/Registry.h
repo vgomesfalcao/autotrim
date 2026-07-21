@@ -99,6 +99,7 @@ namespace registry
 
     // Session-wide settings owned by the panel instance.
     extern std::atomic<float> maxTrimDb;
-    extern std::atomic<float> measDurationS;
+    extern std::atomic<float> measDurationS; // sustained-instrument window
+    extern std::atomic<int> measHits;        // percussive (drum) hit count
 } // namespace registry
 } // namespace autotrim

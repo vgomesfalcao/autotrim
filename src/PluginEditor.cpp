@@ -220,7 +220,18 @@ float MeterBar::mapDbToFrac(float db) const
 
 void MeterBar::paint(juce::Graphics& g)
 {
-    auto r = getLocalBounds().toFloat();
+    auto full = getLocalBounds().toFloat();
+
+    // Fixed dark readout gutter to the RIGHT of the coloured bar — the
+    // FabFilter / iZotope Insight convention. Keeping the number off the fill
+    // gives it a constant dark background, so contrast never depends on the
+    // gradient colour underneath (a translucent chip over the fill read as
+    // amateur). The bar's scale uses only the remaining width.
+    constexpr float kGutterW = 58.0f;
+    auto gutter = full.removeFromRight(kGutterW);
+    auto r = full;
+    r.removeFromRight(6.0f); // gap between bar and gutter
+
     g.setColour(colours::cardOutline);
     g.fillRoundedRectangle(r, 4.0f);
 
@@ -271,23 +282,17 @@ void MeterBar::paint(juce::Graphics& g)
         g.fillRect(tickX - 1.0f, r.getY(), 2.0f, r.getHeight());
     }
 
-    // Numeric readout: the bar's own fill colour underneath varies (dark,
-    // teal, amber, red, yellow), so plain white text loses contrast whenever
-    // it lands on a light fill. A dark backing chip guarantees legibility
-    // regardless of what's underneath — same trick as the CLIP/AGC badges.
+    // Numeric readout in its own gutter: constant dark background, so the
+    // value is legible at silence, at target and clipping alike. Turns amber
+    // once the level is past the hot point (approaching clip) as a quiet cue.
     const auto text = textDb <= -90.0f
                           ? "-inf" + unit
                           : (textDb >= 0.0f ? "+" : "") + juce::String(textDb, 1) + unit;
-    const auto textFont = juce::Font(juce::FontOptions(12.0f));
-    g.setFont(textFont);
-    auto textArea = getLocalBounds().toFloat().reduced(6.0f, 0.0f);
-    const float textW = juce::jmin(
-        textArea.getWidth(), (float) juce::GlyphArrangement::getStringWidth(textFont, text) + 8.0f);
-    auto chip = textArea.removeFromRight(textW);
-    g.setColour(colours::background.withAlpha(0.68f));
-    g.fillRoundedRectangle(chip.expanded(2.0f, 1.0f), 3.0f);
-    g.setColour(colours::text);
-    g.drawText(text, chip, juce::Justification::centredRight);
+    g.setColour(colours::background);
+    g.fillRoundedRectangle(gutter, 4.0f);
+    g.setFont(juce::Font(juce::FontOptions(12.0f)));
+    g.setColour(textDb >= hotDb - 0.05f ? colours::warning : colours::text);
+    g.drawText(text, gutter.reduced(6.0f, 0.0f), juce::Justification::centredRight);
 }
 
 //==============================================================================
@@ -639,8 +644,8 @@ void ChannelView::refresh()
         measureText = "Cancelar";
         if (proc.shared->measStarted.load()
             && dsp::profileFor((int) proc.shared->profile->load()).hitBased)
-            measureText +=
-                " (" + juce::String((int) proc.shared->measHitCount.load()) + " hits)";
+            measureText += " (" + juce::String((int) proc.shared->measHitCount.load()) + "/"
+                           + juce::String(registry::measHits.load()) + " hits)";
     }
     measureButton.setButtonText(measureText);
     measureButton.setEnabled(! measurement::isRunning() || proc.shared->measuring.load());
@@ -820,7 +825,8 @@ void PanelRow::refresh()
         {
             text = utf8("medindo…");
             if (dsp::profileFor((int) shared->profile->load()).hitBased)
-                text += " " + juce::String((int) shared->measHitCount.load()) + " hits";
+                text += " " + juce::String((int) shared->measHitCount.load()) + "/"
+                        + juce::String(registry::measHits.load()) + " hits";
         }
         statusLabel.setText(text, juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);
@@ -1011,7 +1017,8 @@ void MiniPanelView::layoutRows()
 PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 {
     styleTitle(title, utf8("AutoTrim — Painel de Controle"));
-    styleCaption(durationCaption, utf8("Duração da medição"));
+    styleCaption(durationCaption, utf8("Medição — instrumentos (s)"));
+    styleCaption(hitsCaption, utf8("Medição — bateria (batidas)"));
     styleCaption(maxTrimCaption, utf8("Limite de trim (±)"));
     styleCaption(listHeader,
                  utf8("Canal                                     Entrada (cima) / Saída (baixo)"));
@@ -1023,6 +1030,12 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     durationSlider.setValue(registry::measDurationS.load(), juce::dontSendNotification);
     durationSlider.onValueChange = [this]
     { registry::measDurationS.store((float) durationSlider.getValue()); };
+
+    styleHSlider(hitsSlider);
+    hitsSlider.setRange((double) dsp::kMeasHitsMin, (double) dsp::kMeasHitsMax, 1.0);
+    hitsSlider.setValue(registry::measHits.load(), juce::dontSendNotification);
+    hitsSlider.onValueChange = [this]
+    { registry::measHits.store((int) hitsSlider.getValue()); };
 
     styleHSlider(maxTrimSlider);
     maxTrimSlider.setRange(1.0, (double) dsp::kTrimParamRangeDb, 0.5);
@@ -1060,9 +1073,9 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     viewport.setScrollBarsShown(true, false);
 
     for (auto* c : std::initializer_list<juce::Component*> {
-             &title, &durationCaption, &maxTrimCaption, &durationSlider, &maxTrimSlider,
-             &measureButton, &cancelButton, &progressBar, &viewport, &emptyLabel, &panelToggle,
-             &compactButton })
+             &title, &durationCaption, &hitsCaption, &maxTrimCaption, &durationSlider,
+             &hitsSlider, &maxTrimSlider, &measureButton, &cancelButton, &progressBar, &viewport,
+             &emptyLabel, &panelToggle, &compactButton })
         addAndMakeVisible(c);
     progressBar.setVisible(false);
     cancelButton.setVisible(false);
@@ -1075,12 +1088,16 @@ void PanelView::resized()
     r.removeFromTop(10);
 
     auto controls = r.removeFromTop(52);
-    auto left = controls.removeFromLeft(controls.getWidth() / 2).withTrimmedRight(12);
-    auto right = controls.withTrimmedLeft(12);
-    durationCaption.setBounds(left.removeFromTop(18));
-    durationSlider.setBounds(left);
-    maxTrimCaption.setBounds(right.removeFromTop(18));
-    maxTrimSlider.setBounds(right);
+    const int colW = controls.getWidth() / 3;
+    auto colA = controls.removeFromLeft(colW).withTrimmedRight(10);
+    auto colB = controls.removeFromLeft(colW).withTrimmedRight(10).withTrimmedLeft(2);
+    auto colC = controls.withTrimmedLeft(10);
+    durationCaption.setBounds(colA.removeFromTop(18));
+    durationSlider.setBounds(colA);
+    hitsCaption.setBounds(colB.removeFromTop(18));
+    hitsSlider.setBounds(colB);
+    maxTrimCaption.setBounds(colC.removeFromTop(18));
+    maxTrimSlider.setBounds(colC);
     r.removeFromTop(12);
 
     auto actionRow = r.removeFromTop(36);
