@@ -77,12 +77,12 @@ O **rider** mantém o nível no target com **perfis por tipo de fonte** — o pr
 |---|---|---|---|---|---|
 | **Voz** | pico com hold deslizante de 2.5 s | 2.5 / 6 dB/s | ±6 dB | -45 dBFS | 2 dB/s |
 | **Instrumento** | pico com hold deslizante de 3 s | 1.5 / 6 dB/s | ±4 dB | -50 dBFS | 1 dB/s |
-| **Bateria** | média dos picos das últimas 8 batidas (janela 50 ms, retrigger 100 ms) | 4 / 8 dB/s | ±4 dB | -40 dBFS | 0.5 dB/s |
+| **Bateria** | média com gate dos picos das últimas 8 batidas (janela 50 ms, retrigger 100 ms) | 4 / 8 dB/s | ±4 dB | -40 dBFS | 0.5 dB/s |
 
 - A **Velocidade** do rider (taxa de subida, em dB/s) é editável em **Avançado** (0.5–15 dB/s); a descida mantém a proporção do perfil (atenuar é sempre mais rápido que subir). Os padrões seguem as referências profissionais: Voz em nível de frase (Vocal Rider "Slow" ≈ 1.5–3 dB/s), Instrumento nota a nota (Bass Rider segura o ganho dentro da nota), Bateria rápida para convergir em poucas batidas (Drum Leveler salta para o novo ganho a cada hit). Trocar o perfil (ou aplicar um preset) restaura a velocidade padrão dele.
 - O ride é um **offset limitado em volta do trim medido** (não mexe no parâmetro Trim) — segurança contra o ganho fugir do calibrado.
 - **Sensibilidade** (por canal): abaixo dela o rider não persegue ruído/vazamento; o offset desliza de volta ao trim medido. Trocar o perfil restaura a sensibilidade padrão dele.
-- Bateria é por batida (estilo Drum Leveler): rider contínuo bombearia entre os hits.
+- Bateria é por batida (estilo Drum Leveler): rider contínuo bombearia entre os hits. O nível é a **média com gate** das últimas 8 batidas (mesmo estimador da medição) — batidas mais de 6 dB abaixo da referência (vazamento, ghost notes) ficam de fora, para o rider não subir demais achando que o canal está fraco.
 - Zona morta de ±1 dB em volta do target: trim correto fica intocado.
 
 ### AGC (desligado por padrão)
