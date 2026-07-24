@@ -484,12 +484,14 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
             if (hitCompleted)
             {
                 sinceHitS = 0.0f;
-                float sumDb = 0.0f;
-                for (int i = 0; i < hitHistoryCount; ++i)
-                    sumDb += hitHistoryDb[i];
-                const float avgHitDb = sumDb / (float) juce::jmax(1, hitHistoryCount);
+                // Gated average of the recent hits, same as the measurement:
+                // a plain mean would be dragged down by bleed and ghost notes
+                // (weak "hits" from other drums), making the rider think the
+                // level is low and boost until the real hits blow past the
+                // target. The gate drops hits far below the strong ones.
+                const float levelDb = dsp::gatedHitAverageDb(hitHistoryDb, hitHistoryCount);
                 newOffset = dsp::riderOffsetStep(
-                    offsetDb, avgHitDb, trimDb + agcDb, target, profile,
+                    offsetDb, levelDb, trimDb + agcDb, target, profile,
                     juce::jmin(sinceCorrectionS, dsp::kHitCorrectionMaxDtS), upRate, downRate);
                 sinceCorrectionS = 0.0f;
             }
