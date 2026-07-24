@@ -5,6 +5,7 @@
 [![Build: JUCE 8](https://img.shields.io/badge/JUCE-8-orange.svg)](https://juce.com)
 
 Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o ganho (trim) de cada canal com base no nível medido, com um **painel de controle** central que mede e regula todos os canais de uma vez.
+<img width="580" height="823" alt="image" src="https://github.com/user-attachments/assets/97bbb698-ec59-4fd4-94ec-37e898ba869c" />
 
 > AU + VST3 para macOS estão disponíveis em [Releases](https://github.com/vgomesfalcao/autotrim/releases).
 
