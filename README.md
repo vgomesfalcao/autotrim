@@ -1,6 +1,12 @@
 # AutoTrim
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/vgomesfalcao/autotrim)](https://github.com/vgomesfalcao/autotrim/releases)
+[![Build: JUCE 8](https://img.shields.io/badge/JUCE-8-orange.svg)](https://juce.com)
+
 Plugin de áudio (C++ / [JUCE 8](https://juce.com)) que regula automaticamente o ganho (trim) de cada canal com base no nível medido, com um **painel de controle** central que mede e regula todos os canais de uma vez.
+
+> AU + VST3 para macOS estão disponíveis em [Releases](https://github.com/vgomesfalcao/autotrim/releases).
 
 ## Visão geral
 
@@ -180,4 +186,24 @@ trajetória por bloco (entrada, saída, trim, rider, AGC, clip) para plotar.
 - `src/PluginEditor.*`, `src/LookAndFeel.h` — GUI (modo canal e modo painel)
 - `tests/DspTests.cpp` — testes unitários do DSP
 - `docker/`, `scripts/docker-build.sh` — build containerizado
+- `.github/workflows/release.yml` — CI que builda e publica AU + VST3 numa release
 - `archive/rust-nih-plug/` — versão anterior em Rust (arquivada)
+
+## Como contribuir
+
+Contribuições são bem-vindas! Veja o [CONTRIBUTING.md](CONTRIBUTING.md) para o
+fluxo de build (Docker/macOS), como rodar os testes, o simulador offline e os
+padrões de código. Participantes seguem o [Código de Conduta](CODE_OF_CONDUCT.md).
+
+- **Bugs e ideias**: abra uma [issue](https://github.com/vgomesfalcao/autotrim/issues).
+- **Código**: faça um fork, crie um branch, rode `scripts/docker-build.sh test`
+  e abra um Pull Request.
+
+## Licença
+
+Distribuído sob a **GNU General Public License v3.0** — veja [LICENSE](LICENSE).
+
+O AutoTrim usa o [JUCE](https://juce.com) sob a licença gratuita, que exige que
+projetos derivados sejam GPL (v3). Se você fizer um fork para uso fechado/
+comercial, precisará de uma licença comercial do JUCE.
+
