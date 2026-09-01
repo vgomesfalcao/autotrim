@@ -78,24 +78,41 @@ namespace
     // Small per-row "regulate this channel" button (panel + compact rows).
     // Always available: this channel's own measurement never depends on
     // whether a mass batch or another channel is currently measuring.
-    void styleRegButton(juce::TextButton& button, const std::shared_ptr<ChannelShared>& shared)
+    // finishInsteadOfCancel: while measuring a drum channel, tapping it ends
+    // the listening window now (keeping whatever was captured) instead of
+    // discarding the capture — used in the compact view, where there's no
+    // room for a separate finish/cancel pair and "wrap this up, it played"
+    // is the more useful glance-and-tap action during a show. The full panel
+    // row keeps true cancel here and gets a separate "Fim" button instead.
+    void styleRegButton(juce::TextButton& button, const std::shared_ptr<ChannelShared>& shared,
+                        bool finishInsteadOfCancel = false)
     {
         button.setButtonText("Reg");
         button.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
         button.setColour(juce::TextButton::textColourOffId, colours::text);
-        button.onClick = [shared]
+        button.onClick = [shared, finishInsteadOfCancel]
         {
+            const bool drumChannel =
+                shared->profile != nullptr && dsp::profileFor((int) shared->profile->load()).hitBased;
             if (shared->measuring.load())
-                measurement::cancelChannel(shared);
+            {
+                if (finishInsteadOfCancel && drumChannel)
+                    measurement::finishChannelNow(shared);
+                else
+                    measurement::cancelChannel(shared);
+            }
             else
                 measurement::startChannel(shared, registry::measDurationS.load());
         };
     }
 
-    void refreshRegButton(juce::TextButton& button, const ChannelShared& shared)
+    void refreshRegButton(juce::TextButton& button, const ChannelShared& shared,
+                          bool finishInsteadOfCancel = false)
     {
         const bool mine = shared.measuring.load();
-        button.setButtonText(mine ? "X" : "Reg");
+        const bool drumChannel =
+            shared.profile != nullptr && dsp::profileFor((int) shared.profile->load()).hitBased;
+        button.setButtonText(mine ? (finishInsteadOfCancel && drumChannel ? "Fim" : "X") : "Reg");
         button.setEnabled(true);
     }
 
@@ -510,6 +527,10 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
             measurement::startChannel(proc.shared, registry::measDurationS.load());
     };
 
+    finishNowButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+    finishNowButton.setColour(juce::TextButton::textColourOffId, colours::accent);
+    finishNowButton.onClick = [this] { measurement::finishChannelNow(proc.shared); };
+
     advancedButton.setButtonText(utf8("▸  Avançado"));
     advancedButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     advancedButton.setColour(juce::TextButton::textColourOffId, colours::subtext);
@@ -543,8 +564,10 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
              &outMeter, &meterCaption,
              &outMeterCaption, &targetCaption, &trimCaption, &statusStrip, &sectionLabel,
              &targetSlider, &trimSlider, &automationToggle, &riderToggle, &clipGuardToggle,
-             &agcToggle, &peakModeToggle, &panelToggle, &advancedButton, &measureButton })
+             &agcToggle, &peakModeToggle, &panelToggle, &advancedButton, &measureButton,
+             &finishNowButton })
         addAndMakeVisible(c);
+    finishNowButton.setVisible(false);
 
     // "Avançado" starts collapsed.
     for (auto* c : { (juce::Component*) &targetCaption, (juce::Component*) &targetSlider,
@@ -579,7 +602,12 @@ void ChannelView::resized()
     meter.setBounds(inRow.reduced(0, 3));
     r.removeFromTop(12);
 
-    measureButton.setBounds(r.removeFromTop(34));
+    auto measRow = r.removeFromTop(34);
+    // "Concluir agora" (drum measurement only): reserved on the right, blank
+    // when hidden so the row doesn't reflow every time it appears/disappears.
+    finishNowButton.setBounds(measRow.removeFromRight(126));
+    measRow.removeFromRight(8);
+    measureButton.setBounds(measRow);
     r.removeFromTop(14);
 
     // Set-once configuration card ("Avançado" adds the collapsed rows)
@@ -661,17 +689,25 @@ void ChannelView::refresh()
     // Per-channel measurements are polled here too, so they finish even when
     // no panel window is open.
     measurement::poll();
+    const bool measuringNow = proc.shared->measuring.load();
+    const bool drumProfile = dsp::profileFor((int) proc.shared->profile->load()).hitBased;
+    // Drum measurement no longer arms off the Sensibilidade threshold (it
+    // uses the channel's own floor instead) — the knob still governs the
+    // rider, so the label says so rather than implying it still gates
+    // measurement, which would send the operator hunting for the wrong knob.
+    sensCaption.setText(drumProfile ? utf8("Sensibilidade (rider)") : utf8("Sensibilidade"),
+                        juce::dontSendNotification);
     juce::String measureText = "Regular ganho";
-    if (proc.shared->measuring.load())
+    if (measuringNow)
     {
         measureText = "Cancelar";
-        if (proc.shared->measStarted.load()
-            && dsp::profileFor((int) proc.shared->profile->load()).hitBased)
-            measureText += " (" + juce::String((int) proc.shared->measHitCount.load()) + "/"
-                           + juce::String(registry::measHits.load()) + " hits)";
+        if (proc.shared->measStarted.load() && drumProfile)
+            measureText +=
+                " (" + juce::String((int) proc.shared->measHitCount.load()) + utf8(" batidas)");
     }
     measureButton.setButtonText(measureText);
     measureButton.setEnabled(true); // always available, independent of any other measurement
+    finishNowButton.setVisible(measuringNow && drumProfile);
 
     // The big readout mirrors the fader; the rider's live correction is shown
     // separately so the two never disagree.
@@ -772,10 +808,16 @@ PanelRow::PanelRow(std::shared_ptr<ChannelShared> channel) : shared(std::move(ch
 
     styleRegButton(regButton, shared);
 
+    finishNowButton.setColour(juce::TextButton::buttonColourId, colours::cardOutline);
+    finishNowButton.setColour(juce::TextButton::textColourOffId, colours::accent);
+    finishNowButton.onClick = [this] { measurement::finishChannelNow(shared); };
+
     for (auto* c : std::initializer_list<juce::Component*> {
-             &nameLabel, &profileLabel, &meter, &outMeter, &regButton, &presetBox, &trimKnob,
-             &automationToggle, &statusLabel, &moveUpButton, &moveDownButton })
+             &nameLabel, &profileLabel, &meter, &outMeter, &regButton, &finishNowButton,
+             &presetBox, &trimKnob, &automationToggle, &statusLabel, &moveUpButton,
+             &moveDownButton })
         addAndMakeVisible(c);
+    finishNowButton.setVisible(false);
 }
 
 void PanelRow::resized()
@@ -812,8 +854,11 @@ void PanelRow::resized()
     presetBox.setBounds(r.removeFromRight(112).reduced(0, 9));
     r.removeFromRight(18); // generous gap = the group boundary (divider drawn here)
 
-    // Monitoring group: Reg next to the stacked in/out meters.
+    // Monitoring group: Fim (drum "Concluir agora", shown only while
+    // measuring a drum channel) + Reg, next to the stacked in/out meters.
     regButton.setBounds(r.removeFromRight(46).reduced(0, 7));
+    r.removeFromRight(6);
+    finishNowButton.setBounds(r.removeFromRight(40).reduced(0, 7));
     r.removeFromRight(10);
     auto meterArea = r.reduced(0, 6);
     const int gap = 3;
@@ -872,6 +917,8 @@ void PanelRow::refresh()
     const bool automationOn = shared->isAutomationOn();
     automationToggle.setToggleState(automationOn, juce::dontSendNotification);
     refreshRegButton(regButton, *shared);
+    const bool drumProfile = dsp::profileFor((int) shared->profile->load()).hitBased;
+    finishNowButton.setVisible(shared->measuring.load() && drumProfile);
 
     if (shared->measuring.load())
     {
@@ -879,9 +926,8 @@ void PanelRow::refresh()
         if (shared->measStarted.load())
         {
             text = utf8("medindo…");
-            if (dsp::profileFor((int) shared->profile->load()).hitBased)
-                text += " " + juce::String((int) shared->measHitCount.load()) + "/"
-                        + juce::String(registry::measHits.load()) + " hits";
+            if (drumProfile)
+                text += " " + juce::String((int) shared->measHitCount.load()) + utf8(" batidas");
         }
         statusLabel.setText(text, juce::dontSendNotification);
         statusLabel.setColour(juce::Label::textColourId, colours::info);
@@ -937,7 +983,9 @@ MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std:
     // knob to fight with (that lives in the full panel or the channel view).
     gainLabel.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
     gainLabel.setJustificationType(juce::Justification::centredRight);
-    styleRegButton(regButton, shared);
+    // Compact view, drum channel measuring: tapping ends the window now
+    // instead of discarding the capture (true cancel lives in the full panel).
+    styleRegButton(regButton, shared, true);
 
     // Quick include/exclude from "Regular ganhos de todos os canais" without
     // leaving the compact view — e.g. a channel that's off for this song.
@@ -967,7 +1015,7 @@ void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
     automationToggle.setToggleState(shared->isAutomationOn(), juce::dontSendNotification);
-    refreshRegButton(regButton, *shared);
+    refreshRegButton(regButton, *shared, true);
     // Red name = overload protection engaged on this channel.
     nameLabel.setColour(juce::Label::textColourId,
                         shared->protectionActive.load() ? colours::meterHigh : colours::text);
@@ -1082,7 +1130,7 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
 {
     styleTitle(title, utf8("AutoTrim — Painel de Controle"));
     styleCaption(durationCaption, utf8("Medição — instrumentos (s)"));
-    styleCaption(hitsCaption, utf8("Medição — bateria (batidas)"));
+    styleCaption(drumWindowCaption, utf8("Medição — bateria (s)"));
     styleCaption(peakPctCaption, utf8("Picos frequentes (%)"));
     styleCaption(maxTrimCaption, utf8("Limite de trim (±)"));
     styleCaption(listHeader,
@@ -1096,11 +1144,12 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     durationSlider.onValueChange = [this]
     { registry::measDurationS.store((float) durationSlider.getValue()); };
 
-    styleHSlider(hitsSlider);
-    hitsSlider.setRange((double) dsp::kMeasHitsMin, (double) dsp::kMeasHitsMax, 1.0);
-    hitsSlider.setValue(registry::measHits.load(), juce::dontSendNotification);
-    hitsSlider.onValueChange = [this]
-    { registry::measHits.store((int) hitsSlider.getValue()); };
+    styleHSlider(drumWindowSlider);
+    drumWindowSlider.setRange((double) dsp::kDrumWindowMinS, (double) dsp::kDrumWindowMaxS, 1.0);
+    drumWindowSlider.setTextValueSuffix(" s");
+    drumWindowSlider.setValue(registry::measDrumWindowS.load(), juce::dontSendNotification);
+    drumWindowSlider.onValueChange = [this]
+    { registry::measDrumWindowS.store((float) drumWindowSlider.getValue()); };
 
     styleHSlider(peakPctSlider);
     peakPctSlider.setRange((double) dsp::kPeakFrequentPctMin, (double) dsp::kPeakFrequentPctMax, 1.0);
@@ -1163,8 +1212,8 @@ PanelView::PanelView(AutoTrimProcessor& processor) : proc(processor)
     viewport.setScrollBarsShown(true, false);
 
     for (auto* c : std::initializer_list<juce::Component*> {
-             &title, &durationCaption, &hitsCaption, &peakPctCaption, &maxTrimCaption,
-             &durationSlider, &hitsSlider, &peakPctSlider, &maxTrimSlider, &measureButton,
+             &title, &durationCaption, &drumWindowCaption, &peakPctCaption, &maxTrimCaption,
+             &durationSlider, &drumWindowSlider, &peakPctSlider, &maxTrimSlider, &measureButton,
              &cancelButton, &resetButton,
              &progressBar, &viewport, &emptyLabel, &panelToggle, &compactButton })
         addAndMakeVisible(c);
@@ -1186,8 +1235,8 @@ void PanelView::resized()
     auto colD = controls;
     durationCaption.setBounds(colA.removeFromTop(18));
     durationSlider.setBounds(colA);
-    hitsCaption.setBounds(colB.removeFromTop(18));
-    hitsSlider.setBounds(colB);
+    drumWindowCaption.setBounds(colB.removeFromTop(18));
+    drumWindowSlider.setBounds(colB);
     peakPctCaption.setBounds(colC.removeFromTop(18));
     peakPctSlider.setBounds(colC);
     maxTrimCaption.setBounds(colD.removeFromTop(18));

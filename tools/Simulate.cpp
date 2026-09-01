@@ -39,6 +39,7 @@ struct Options
     float agcTimeS = dsp::kAgcHoldS;
     float agcRangeDb = dsp::kAgcRangeDb;
     float measS = dsp::kDefaultMeasDurationS;
+    float drumWindowS = dsp::kDrumWindowDefaultS;
     juce::String csvPath;
 };
 } // namespace
@@ -72,6 +73,8 @@ int main(int argc, char* argv[])
             opt.agcRangeDb = next().getFloatValue();
         else if (arg == "--meas")
             opt.measS = next().getFloatValue();
+        else if (arg == "--drumwindow")
+            opt.drumWindowS = next().getFloatValue();
         else if (arg == "--csv")
             opt.csvPath = next();
         else if (! arg.startsWith("-"))
@@ -83,7 +86,7 @@ int main(int argc, char* argv[])
         std::printf(
             "uso: autotrim-sim arquivo.wav [--target dB] [--profile voz|instrumento|bateria]\n"
             "                 [--sens dB] [--rider] [--agc] [--agctime s] [--agcrange dB]\n"
-            "                 [--meas s] [--csv saida.csv]\n");
+            "                 [--meas s] [--drumwindow s] [--csv saida.csv]\n");
         return 1;
     }
 
@@ -107,9 +110,10 @@ int main(int argc, char* argv[])
     std::printf("arquivo: %s (%.0f Hz, %d canais, %s)\n", opt.file.toRawUTF8(), sr,
                 (int) reader->numChannels, formatTime(totalS).toRawUTF8());
     std::printf("config: target %.1f dBFS, perfil %s, rider %s, AGC %s (tempo %.0f s, máx "
-                "%.0f dB), medição %.0f s\n\n",
+                "%.0f dB), medição %.0f s (bateria: janela %.0f s)\n\n",
                 opt.targetDb, profileNames[opt.profile], opt.rider ? "ON" : "off",
-                opt.agc ? "ON" : "off", opt.agcTimeS, opt.agcRangeDb, opt.measS);
+                opt.agc ? "ON" : "off", opt.agcTimeS, opt.agcRangeDb, opt.measS,
+                opt.drumWindowS);
 
     AutoTrimProcessor proc;
     presets::writeParam(proc.apvts.getParameter("target"), opt.targetDb);
@@ -121,6 +125,7 @@ int main(int argc, char* argv[])
     presets::writeParam(proc.apvts.getParameter("agctime"), opt.agcTimeS);
     presets::writeParam(proc.apvts.getParameter("agcrange"), opt.agcRangeDb);
     registry::measDurationS.store(opt.measS);
+    registry::measDrumWindowS.store(opt.drumWindowS);
 
     const int blockSize = 512;
     proc.prepareToPlay(sr, blockSize);
@@ -187,7 +192,10 @@ int main(int argc, char* argv[])
             measStartedSeen = true;
             logEvent(t, utf8("medição iniciou (sinal chegou)"));
         }
-        if (measWasRunning && ! measurement::isRunning())
+        // This channel's own measuring flag, not measurement::isRunning():
+        // that one only tracks the panel's mass-measure batch, and the
+        // simulator drives a single channel via startChannel() directly.
+        if (measWasRunning && ! proc.shared->measuring.load())
         {
             measWasRunning = false;
             measDoneT = t;

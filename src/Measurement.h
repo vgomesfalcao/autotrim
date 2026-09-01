@@ -37,6 +37,10 @@ void cancel();
 // Cancels one channel's own measurement, whether it started individually or
 // as part of a mass batch.
 void cancelChannel(const std::shared_ptr<ChannelShared>& channel);
+// Ends a drum channel's measurement now, with whatever was captured, instead
+// of waiting out the full listening window. No-op if the channel isn't
+// currently measuring; the flag is consumed on the audio thread's next block.
+void finishChannelNow(const std::shared_ptr<ChannelShared>& channel);
 // Applies trims when a channel's window has elapsed. Safe to call from
 // multiple open editors every frame.
 void poll();

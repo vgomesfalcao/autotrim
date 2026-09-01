@@ -16,9 +16,18 @@ namespace
     bool massRunning = false;
     std::vector<std::shared_ptr<ChannelShared>> massInvolved;
 
-    double newDeadlineMs()
+    // Drum channels get a longer deadline than the processor's own listening
+    // window (registry::measDrumWindowS): the processor's window-based close
+    // is what normally fires (and it runs the frequent-peak / corroboration
+    // logic on the way out), this deadline is only the safety net for a
+    // channel that never gets polled to close on its own.
+    double deadlineMsFor(const ChannelShared& ch)
     {
-        return juce::Time::getMillisecondCounterHiRes() + dsp::kMeasArmTimeoutS * 1000.0;
+        const int profileIdx = ch.profile != nullptr ? (int) ch.profile->load() : 1;
+        const double windowS = dsp::profileFor(profileIdx).hitBased
+                                   ? (double) registry::measDrumWindowS.load() + 5.0
+                                   : (double) dsp::kMeasArmTimeoutS;
+        return juce::Time::getMillisecondCounterHiRes() + windowS * 1000.0;
     }
 
     void arm(ChannelShared& ch, double deadlineMs)
@@ -29,6 +38,7 @@ namespace
         ch.measStarted.store(false);
         ch.measDone.store(false);
         ch.measHitCount.store(0);
+        ch.measFinishNow.store(false);
         ch.measArmDeadlineMs.store(deadlineMs);
         ch.measuring.store(true);
     }
@@ -66,6 +76,7 @@ namespace
     {
         ch.measuring.store(false);
         ch.measDone.store(false);
+        ch.measFinishNow.store(false);
     }
 } // namespace
 
@@ -75,13 +86,12 @@ void start(float)
     // no-op); this does NOT gate individual per-channel measurements below.
     if (massRunning)
         return;
-    const double deadline = newDeadlineMs();
     massInvolved.clear();
     for (auto& ch : registry::channels())
     {
         if (! ch->isAutomationOn() || ch->measuring.load())
             continue; // off, or already mid-measurement on its own — leave it alone
-        arm(*ch, deadline);
+        arm(*ch, deadlineMsFor(*ch));
         massInvolved.push_back(ch);
     }
     massRunning = ! massInvolved.empty();
@@ -91,7 +101,7 @@ void startChannel(const std::shared_ptr<ChannelShared>& channel, float)
 {
     if (channel == nullptr || channel->measuring.load())
         return; // already has a measurement running (its own, or in a mass batch)
-    arm(*channel, newDeadlineMs());
+    arm(*channel, deadlineMsFor(*channel));
 }
 
 void resetAll()
@@ -125,6 +135,12 @@ void cancelChannel(const std::shared_ptr<ChannelShared>& channel)
     stopMeasuring(*channel);
     massInvolved.erase(std::remove(massInvolved.begin(), massInvolved.end(), channel),
                        massInvolved.end());
+}
+
+void finishChannelNow(const std::shared_ptr<ChannelShared>& channel)
+{
+    if (channel != nullptr && channel->measuring.load())
+        channel->measFinishNow.store(true);
 }
 
 void poll()

@@ -59,6 +59,10 @@ struct ChannelShared
     std::atomic<bool> measStarted { false };
     std::atomic<bool> measDone { false };
     std::atomic<uint32_t> measHitCount { 0 }; // drum-profile measurement progress
+    // "Concluir agora" (channel/panel row): message thread sets it, the audio
+    // thread consumes it once (exchange) to close a drum measurement early
+    // with whatever was captured, instead of waiting out the full window.
+    std::atomic<bool> measFinishNow { false };
     std::atomic<bool> noSignal { false };
     std::atomic<bool> alive { true };
     // Bumped when a new measurement starts so the audio thread resets its
@@ -106,8 +110,8 @@ namespace registry
 
     // Session-wide settings owned by the panel instance.
     extern std::atomic<float> maxTrimDb;
-    extern std::atomic<float> measDurationS; // sustained-instrument window
-    extern std::atomic<int> measHits;        // percussive (drum) hit count
+    extern std::atomic<float> measDurationS;     // sustained-instrument window
+    extern std::atomic<float> measDrumWindowS;   // percussive (drum) listening window
     extern std::atomic<int> peakFrequentPct; // % of peaks that counts as "frequent"
 } // namespace registry
 } // namespace autotrim

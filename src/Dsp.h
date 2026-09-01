@@ -181,13 +181,17 @@ constexpr float kMeasArmTimeoutS = 90.0f;
 // average the peaks of every hit captured during the window.
 constexpr float kMeasSlotS = 0.5f;
 
-// Percussive (drum) sources measure by a *hit count*, not the seconds window
-// used for sustained instruments: a tom or surdo plays at isolated moments,
-// so "N clean hits captured" is the meaningful stop condition, independent of
-// wall-clock time. Editable in the panel alongside the seconds field.
-constexpr int kDefaultMeasHits = 15;
-constexpr int kMeasHitsMin = 3;
-constexpr int kMeasHitsMax = 60;
+// Percussive (drum) sources measure by a *listening window*, not a hit
+// count: a source like a tom can enter a song late (first chorus) and play
+// only a handful of times, so a hit-count target either closes on kit bleed
+// before it's ever struck or has to be set unreasonably high. In peak mode
+// the window is safe to just wait out — a direct hit is, by construction,
+// the loudest thing on its own mic, so bleed never outranks it, it only
+// needs enough time to happen. Editable in the panel; "Concluir agora" ends
+// it early with whatever was captured.
+constexpr float kDrumWindowDefaultS = 60.0f;
+constexpr float kDrumWindowMinS = 20.0f;
+constexpr float kDrumWindowMaxS = 120.0f;
 
 // Drum measurement: hits more than this far below the reference are bleed or
 // ghost notes, not direct hits — real strong hits of one drum cluster within
@@ -229,6 +233,75 @@ inline float gatedHitAverageDb(const float* hitsDb, int count)
     }
     return kept > 0 ? sum / (float) kept : refDb;
 }
+
+// A lone hit far above everything else (mic bump, stick hitting the rim,
+// stand knock) is corroborated by nothing and shouldn't become the
+// reference a channel is calibrated to — same principle as
+// gatedHitAverageDb's refusal to ever anchor on the single loudest hit,
+// applied to peak-mode measurement (which otherwise trusts the raw max).
+// With fewer than 3 hits there's no way to tell an outlier from a real
+// accent, so the max is trusted as-is.
+constexpr float kPeakCorroborationDb = 10.0f;
+
+inline float corroboratedPeakDb(const float* hitsDb, int count)
+{
+    if (count <= 0)
+        return -200.0f;
+    if (count < 3)
+    {
+        float maxDb = hitsDb[0];
+        for (int i = 1; i < count; ++i)
+            maxDb = std::max(maxDb, hitsDb[i]);
+        return maxDb;
+    }
+    float sorted[kMeasMaxHits];
+    const int n = std::min(count, kMeasMaxHits);
+    std::copy(hitsDb, hitsDb + n, sorted);
+    std::sort(sorted, sorted + n, [](float a, float b) { return a > b; });
+    return (sorted[0] - sorted[1] > kPeakCorroborationDb) ? sorted[1] : sorted[0];
+}
+
+// Channel's own floor (sustained bleed + noise) tracked continuously, not
+// just during a measurement: falls immediately toward a quieter block so it
+// always reflects the real floor, rises no faster than kFloorRiseDbPerS so a
+// single hit's brief peak barely moves it. The drum hit threshold sits a
+// fixed margin above this floor instead of a fixed dBFS number — change the
+// preamp gain upstream and both the floor and the hits move together, so the
+// decision doesn't change. Running continuously (never reset when a new
+// measurement starts) means the floor is already converged by the time the
+// operator clicks "Regular ganho", instead of ramping up from a cold start.
+constexpr float kFloorRiseDbPerS = 3.0f;
+constexpr float kDrumArmMarginDb = 15.0f;
+
+struct FloorTracker
+{
+    float floorDb = -100.0f;
+    bool seeded = false;
+
+    void reset()
+    {
+        floorDb = -100.0f;
+        seeded = false;
+    }
+
+    // Feed once per block with that block's peak (dB). The first call after
+    // a reset seeds directly from the block instead of ramping up from
+    // -100 dB (a stray hit as the seed self-corrects within one quiet block,
+    // since falls are instant).
+    void step(float blockPeakDb, float dt)
+    {
+        if (! seeded)
+        {
+            floorDb = blockPeakDb;
+            seeded = true;
+            return;
+        }
+        floorDb = blockPeakDb <= floorDb ? blockPeakDb
+                                         : std::min(blockPeakDb, floorDb + kFloorRiseDbPerS * dt);
+    }
+
+    float thresholdDb(float marginDb) const { return floorDb + marginDb; }
+};
 
 // Frequent-peak protection (average measurement only). After calibrating to
 // the mean, if many captured peaks sit more than the margin above the mean,
@@ -328,6 +401,31 @@ inline Biquad makeKHighpass(float fs)
     b.a2 = (1.0f - alpha) / a0;
     return b;
 }
+
+// General-purpose RBJ high-pass biquad (Q = 0.7071, a Butterworth-style
+// single pole pair) at an arbitrary cutoff — used to sharpen the drum
+// measurement's hit detector front-end. A kick transient in a tom mic is
+// often the loudest instantaneous sample in the channel, because low
+// frequency doesn't share the proximity/rejection falloff a mic's polar
+// pattern applies to the midrange; filtering below the cutoff before
+// deciding "is this a hit" recovers real separation between the direct
+// source and kit bleed on the same mic.
+inline Biquad makeHighpass(float fs, float f0)
+{
+    constexpr float Q = 0.7071067811865476f;
+    const float w0 = 2.0f * 3.14159265358979f * f0 / fs;
+    const float alpha = std::sin(w0) / (2.0f * Q);
+    const float c = std::cos(w0);
+    const float a0 = 1.0f + alpha;
+    Biquad b;
+    b.b0 = ((1.0f + c) / 2.0f) / a0;
+    b.b1 = (-(1.0f + c)) / a0;
+    b.b2 = ((1.0f + c) / 2.0f) / a0;
+    b.a1 = (-2.0f * c) / a0;
+    b.a2 = (1.0f - alpha) / a0;
+    return b;
+}
+constexpr float kDrumDetectHpfHz = 100.0f;
 
 // Hit detection (drum profile)
 constexpr float kHitWindowS = 0.050f;    // peak capture window per hit
@@ -522,13 +620,18 @@ struct HitDetector
         cooldownSamples = 0;
     }
 
+    // detectPeak decides arming and the threshold crossing (e.g. a
+    // high-pass-filtered signal, for better direct-hit/bleed separation);
+    // levelPeak is what gets captured as the hit's level — always the real,
+    // unfiltered signal, since the calibrated gain must reflect what the
+    // channel actually outputs, not the detector's filtered view of it.
     // Returns the hit's peak (linear) when its capture window completes.
-    std::optional<float> step(float framePeak, float thresholdLin, int windowSamples,
-                              int retriggerSamples)
+    std::optional<float> step(float detectPeak, float levelPeak, float thresholdLin,
+                              int windowSamples, int retriggerSamples)
     {
         if (inHit)
         {
-            peak = std::max(peak, framePeak);
+            peak = std::max(peak, levelPeak);
             if (--windowSamplesLeft <= 0)
             {
                 inHit = false;
@@ -540,13 +643,21 @@ struct HitDetector
         {
             --cooldownSamples;
         }
-        else if (framePeak > thresholdLin)
+        else if (detectPeak > thresholdLin)
         {
             inHit = true;
-            peak = framePeak;
+            peak = levelPeak;
             windowSamplesLeft = windowSamples;
         }
         return std::nullopt;
+    }
+
+    // Convenience overload for callers with no separate detection signal
+    // (the rider's hit detection, and every existing test).
+    std::optional<float> step(float framePeak, float thresholdLin, int windowSamples,
+                              int retriggerSamples)
+    {
+        return step(framePeak, framePeak, thresholdLin, windowSamples, retriggerSamples);
     }
 };
 

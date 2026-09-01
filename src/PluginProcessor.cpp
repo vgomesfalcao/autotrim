@@ -106,11 +106,13 @@ void AutoTrimProcessor::prepareToPlay(double sampleRate, int)
     gainLin = dsp::dbToGain(shared->effectiveTrimDb());
     resetHitState();
     resetAgcState();
+    measFloor.reset();
 
     for (int ch = 0; ch < 2; ++ch)
     {
         lufsShelf[ch] = dsp::makeKShelf(sr);
         lufsHighpass[ch] = dsp::makeKHighpass(sr);
+        drumDetectHpf[ch] = dsp::makeHighpass(sr, dsp::kDrumDetectHpfHz);
     }
     for (int i = 0; i < dsp::kLufsSlots; ++i)
     {
@@ -254,6 +256,13 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     // Cross-channel dominance was tried and reverted — pre-trim levels are
     // not comparable across preamps, so a quiet channel could never win.
     const float measArmLin = juce::jmax(sensLin, measGateLin);
+    // Drum measurement arms relative to the channel's own recent floor
+    // (bleed + noise), not a fixed dBFS number: change the preamp gain
+    // upstream and both the floor and the hits move together, so the margin
+    // above it keeps meaning the same thing. Never below the no-signal gate,
+    // so a channel that's genuinely silent still reads as silent.
+    const float measArmLinDrum =
+        juce::jmax(dsp::dbToGain(measFloor.thresholdDb(dsp::kDrumArmMarginDb)), measGateLin);
     bool hitCompleted = false;
 
     float offsetDb = shared->riderOffsetDb.load();
@@ -287,8 +296,17 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
         else if (countMeasHits)
         {
-            if (const auto hit = hitDetector.step(framePeak, measArmLin, hitWindowSamples,
-                                                  hitRetriggerSamples))
+            // High-passed detection signal: recovers real separation between
+            // a direct hit and broadband kit bleed on the same mic (see
+            // dsp::makeHighpass). The captured LEVEL still comes from the raw
+            // signal (levelPeak = framePeak below) — only the arm/threshold
+            // decision uses the filtered view.
+            float detectPeak = 0.0f;
+            for (int ch = 0; ch < numChannels && ch < 2; ++ch)
+                detectPeak =
+                    juce::jmax(detectPeak, std::abs(drumDetectHpf[ch].process(channelData[ch][i])));
+            if (const auto hit = hitDetector.step(detectPeak, framePeak, measArmLinDrum,
+                                                  hitWindowSamples, hitRetriggerSamples))
             {
                 // Each hit's peak enters the gated average: hits far below
                 // the strong ones (bleed, ghost notes) are dropped so they
@@ -324,6 +342,11 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     shared->peakPostTrim.store(
         juce::jmax(shared->peakPostTrim.load() * meterDecay, blockPeakPost));
 
+    // Runs continuously (not just while measuring), so it's already
+    // converged by the time a drum measurement starts instead of ramping up
+    // from a cold start.
+    measFloor.step(dsp::gainToDb(blockPeak), dt);
+
     // Measurement window: this thread is the only writer of measuredPeak; the
     // epoch bump tells us the panel started a new run. Armed: the window only
     // starts counting when signal first crosses the gate, so sources that
@@ -337,7 +360,10 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         measCount = 0;
         measStartedLocal = false;
         measBudgetArmed = false;
+        measArmedS = 0.0f;
         hitDetector.reset();
+        drumDetectHpf[0].reset();
+        drumDetectHpf[1].reset();
         // A fresh measurement recalibrates the trim: AGC evidence restarts.
         resetAgcState();
     }
@@ -377,11 +403,20 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         // mode it applies the frequent-peak protection: when loud peaks are
         // frequent (the mean undersells the material, gain would run hot) the
         // level is pulled back so the loudest peak lands at +3 dB over target;
-        // a rare stray peak keeps the mean. Peak mode already calibrated to
-        // the loudest peak, so it's left as-is.
+        // a rare stray peak keeps the mean. Drum peak mode instead corroborates
+        // the max against the rest of the capture (a lone outlier hit — mic
+        // bump, stick on the rim — is rejected in favor of the next loudest).
+        // Continuous peak mode is already calibrated to the loudest block, so
+        // it's left as-is.
         const auto closeMeasurement = [&]
         {
-            if (! peakMode)
+            if (profile.hitBased && peakMode)
+            {
+                const int n = juce::jmin(measCount, dsp::kMeasMaxHits);
+                if (n > 0)
+                    shared->measuredPeak.store(dsp::dbToGain(dsp::corroboratedPeakDb(measPeaksDb, n)));
+            }
+            else if (! peakMode)
             {
                 const float meanDb = dsp::gainToDb(shared->measuredPeak.load());
                 const float level = dsp::peakLimitedLevelDb(
@@ -395,12 +430,17 @@ void AutoTrimProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
         if (profile.hitBased)
         {
-            // Percussive sources close by a HIT COUNT, wholly independent of
-            // the seconds window: a tom plays at isolated moments, so N clean
-            // hits is the meaningful stop condition. Hits are detected and
-            // averaged (with the bleed gate) in the sample loop above; here we
-            // just check whether enough have been captured.
-            if (measStartedLocal && measCount >= registry::measHits.load())
+            // Percussive sources close on a LISTENING WINDOW (registry::
+            // measDrumWindowS), not a hit count: a source like a tom can
+            // enter a song late, so waiting a fixed number of seconds is
+            // what gives it time to be struck at all, rather than closing
+            // on kit bleed before it ever is. Hits are detected and averaged
+            // (with the bleed gate) in the sample loop above; here we just
+            // decide when to stop listening. "Concluir agora" (a channel or
+            // panel-row button) ends it early with whatever was captured.
+            measArmedS += dt;
+            const bool finishNow = shared->measFinishNow.exchange(false);
+            if (finishNow || measArmedS >= registry::measDrumWindowS.load())
                 closeMeasurement();
         }
         else
@@ -589,7 +629,7 @@ void AutoTrimProcessor::getStateInformation(juce::MemoryBlock& destData)
     // instance restores them, so a channel's stale copy never wins.
     state.setProperty("maxTrimDb", registry::maxTrimDb.load(), nullptr);
     state.setProperty("measDurationS", registry::measDurationS.load(), nullptr);
-    state.setProperty("measHits", registry::measHits.load(), nullptr);
+    state.setProperty("measDrumWindowS", registry::measDrumWindowS.load(), nullptr);
     state.setProperty("peakFrequentPct", registry::peakFrequentPct.load(), nullptr);
 
     juce::MemoryOutputStream stream(destData, false);
@@ -617,8 +657,8 @@ void AutoTrimProcessor::setStateInformation(const void* data, int sizeInBytes)
             "maxTrimDb", (double) dsp::kDefaultMaxTrimDb));
         registry::measDurationS.store((float) (double) state.getProperty(
             "measDurationS", (double) dsp::kDefaultMeasDurationS));
-        registry::measHits.store(
-            (int) state.getProperty("measHits", dsp::kDefaultMeasHits));
+        registry::measDrumWindowS.store((float) (double) state.getProperty(
+            "measDrumWindowS", (double) dsp::kDrumWindowDefaultS));
         registry::peakFrequentPct.store(
             (int) state.getProperty("peakFrequentPct", dsp::kDefaultPeakFrequentPct));
     }

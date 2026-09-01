@@ -103,6 +103,9 @@ private:
     juce::Slider targetSlider, trimSlider, sensSlider, speedSlider, agcTimeSlider,
         agcRangeSlider;
     juce::TextButton measureButton { "Regular ganho" };
+    // Drum measurement only: ends the listening window now with whatever was
+    // captured, instead of waiting out the full window.
+    juce::TextButton finishNowButton { utf8("Concluir agora") };
     juce::ToggleButton automationToggle { utf8("Automação") },
         riderToggle { utf8("Rider (modo contínuo)") },
         clipGuardToggle { utf8("Clip Guard (corte anti-clip)") },
@@ -135,6 +138,9 @@ private:
     juce::Label nameLabel, profileLabel, statusLabel;
     MeterBar meter, outMeter;
     juce::TextButton regButton;
+    // Drum measurement only: ends the listening window now with whatever was
+    // captured. Cancel (discarding the capture) stays on regButton ("X").
+    juce::TextButton finishNowButton { utf8("Fim") };
     // ArrowButton paints a triangle Path — no font, so it never truncates to
     // "…" the way a tiny text button does. Direction: 0.75 = up, 0.25 = down.
     juce::ArrowButton moveUpButton { "up", 0.75f, colours::subtext };
@@ -201,10 +207,10 @@ public:
 private:
     AutoTrimProcessor& proc;
 
-    juce::Label title, durationCaption, hitsCaption, peakPctCaption, maxTrimCaption, listHeader,
-        emptyLabel, lufsCaption;
+    juce::Label title, durationCaption, drumWindowCaption, peakPctCaption, maxTrimCaption,
+        listHeader, emptyLabel, lufsCaption;
     MeterBar lufsMeter;
-    juce::Slider durationSlider, hitsSlider, peakPctSlider, maxTrimSlider;
+    juce::Slider durationSlider, drumWindowSlider, peakPctSlider, maxTrimSlider;
     juce::TextButton measureButton { "Regular ganhos de todos os canais" };
     juce::TextButton cancelButton { "Cancelar" };
     juce::TextButton resetButton { "Zerar ganhos" };

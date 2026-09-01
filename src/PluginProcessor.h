@@ -60,11 +60,23 @@ private:
     bool measStartedLocal = false;
     bool measBudgetArmed = false;
     double currentSampleRate = 48000.0;
+    // Drum measurement: wall-clock time spent armed, closes the measurement
+    // at registry::measDrumWindowS (or sooner via "Concluir agora").
+    float measArmedS = 0.0f;
+    // Channel's own floor (bleed + noise), tracked continuously — not reset
+    // per measurement — so it's already converged by the time one starts.
+    // Feeds the drum measurement's arm threshold (floor + margin), replacing
+    // the fixed-dBFS Sensibilidade for that one purpose.
+    dsp::FloorTracker measFloor;
 
     // Hit detection (drum profile): shared by the rider and the measurement.
     dsp::HitDetector hitDetector;
     int hitWindowSamples = 2400;
     int hitRetriggerSamples = 4800;
+    // Drum measurement's hit-detector front-end: high-passed so a hit's real
+    // separation from broadband bleed on the same mic survives detection.
+    // Reset per measurement (epoch change); never touches the actual audio.
+    dsp::Biquad drumDetectHpf[2];
     float hitHistoryDb[8] = {};
     int hitHistoryCount = 0;
     int hitHistoryPos = 0;

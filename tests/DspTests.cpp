@@ -158,6 +158,57 @@ int main()
         CHECK(approx(gatedHitAverageDb(eight, 8), -10.5f));
     }
 
+    // Corroborated peak (drum measurement, peak mode): a lone outlier hit
+    // isn't trusted as the reference until a second hit near it confirms it.
+    {
+        // Two hits close together: trust the max as-is.
+        const float pair[2] = { -10.0f, -11.0f };
+        CHECK(approx(corroboratedPeakDb(pair, 2), -10.0f));
+        // Lone spike 25 dB above three real hits: falls back to the next
+        // loudest instead of calibrating to the spike.
+        const float spike[4] = { 15.0f, -10.0f, -11.0f, -10.5f };
+        CHECK(approx(corroboratedPeakDb(spike, 4), -10.0f));
+        // A real accent only 4 dB above the rest is corroborated enough
+        // (within the 10 dB margin): the max is kept.
+        const float accent[4] = { -6.0f, -10.0f, -11.0f, -10.5f };
+        CHECK(approx(corroboratedPeakDb(accent, 4), -6.0f));
+        // With fewer than 3 hits there's no way to tell an outlier from a
+        // real accent: the max is trusted even when it's far above the rest.
+        CHECK(approx(corroboratedPeakDb(spike, 2), 15.0f));
+        CHECK(approx(corroboratedPeakDb(spike, 1), 15.0f));
+    }
+
+    // Floor tracker (drum measurement arm threshold): falls immediately to a
+    // quieter block, rises no faster than kFloorRiseDbPerS, and the arm
+    // threshold moves with it instead of a fixed dBFS number.
+    {
+        FloorTracker floor;
+        // First call seeds directly (no ramp from -100 dB).
+        floor.step(-40.0f, 1.0f);
+        CHECK(approx(floor.floorDb, -40.0f));
+        // A single loud block (a hit) at 1 kHz-block granularity barely
+        // moves the floor: capped at kFloorRiseDbPerS * dt.
+        floor.step(0.0f, 0.01f);
+        CHECK(floor.floorDb < -39.9f);
+        // Falls back to a quieter block immediately, no matter how far.
+        floor.step(-70.0f, 0.01f);
+        CHECK(approx(floor.floorDb, -70.0f));
+        // Sustained bleed at a constant level: the floor converges to it and
+        // the arm threshold sits the fixed margin above.
+        FloorTracker bleed;
+        for (int i = 0; i < 50; ++i)
+            bleed.step(-40.0f, 0.1f);
+        CHECK(approx(bleed.floorDb, -40.0f));
+        CHECK(approx(bleed.thresholdDb(kDrumArmMarginDb), -25.0f));
+        // Only noise floor (nobody playing): threshold sits above the noise,
+        // so nothing arms — this is what keeps "sem sinal" working.
+        FloorTracker noise;
+        for (int i = 0; i < 50; ++i)
+            noise.step(-52.0f, 0.1f);
+        CHECK(approx(noise.floorDb, -52.0f));
+        CHECK(approx(noise.thresholdDb(kDrumArmMarginDb), -37.0f));
+    }
+
     // AGC bail-out detector: a sustained note fires fast, a picked solo
     // accumulates through its note gaps, a lone spike never fires, and
     // widely spaced spikes never accumulate.
@@ -428,6 +479,26 @@ int main()
         }
         det.step(0.9f, 0.5f, window, retrigger);
         CHECK(det.inHit); // cooldown over: new hit
+    }
+
+    // Hit detector with a separate detection signal (drum measurement's
+    // high-passed front-end): arming follows detectPeak, but the captured
+    // level is always levelPeak — the calibrated gain must reflect the real
+    // signal, not the filtered view used only to decide "is this a hit".
+    {
+        HitDetector det;
+        const int window = 4, retrigger = 10;
+        // detectPeak below threshold: no hit, even though levelPeak is huge.
+        CHECK(! det.step(0.2f, 5.0f, 0.5f, window, retrigger).has_value());
+        CHECK(! det.inHit);
+        // detectPeak crosses: hit starts, captures levelPeak (not detectPeak).
+        CHECK(! det.step(0.6f, 0.8f, 0.5f, window, retrigger).has_value());
+        CHECK(det.inHit);
+        det.step(0.6f, 1.2f, 0.5f, window, retrigger); // loudest levelPeak
+        det.step(0.6f, 0.5f, 0.5f, window, retrigger);
+        det.step(0.6f, 0.3f, 0.5f, window, retrigger);
+        const auto hit = det.step(0.6f, 0.1f, 0.5f, window, retrigger); // window ends
+        CHECK(hit.has_value() && approx(*hit, 1.2f));
     }
 
     // Slot averager: mean dB of program slots plus the per-slot peak; pause

@@ -33,16 +33,18 @@ Target, trim, automação, rider, AGC e Clip Guard são **parâmetros do host** 
 
 No painel, configure a **duração da medição** (padrão 5 s) e o **limite de trim ±dB** (padrão ±36, ajustável até ±60) e clique em **"Regular ganhos de todos os canais"**.
 
-A medição é **armada por canal**: cada canal fica "aguardando sinal" e a janela só começa a contar quando o sinal chega nele — fontes que tocam em momentos isolados (tons, surdo) são capturadas quando tocarem. A medição arma no limiar de **Sensibilidade do canal** (Avançado).
+A medição é **armada por canal**: cada canal fica "aguardando sinal" e a janela só começa a contar quando o sinal chega nele — fontes que tocam em momentos isolados (tons, surdo) são capturadas quando tocarem. Em canais de instrumento/voz a medição arma no limiar de **Sensibilidade do canal** (Avançado); canais de **bateria armam de outra forma** (ver abaixo).
 
-Ao fim, o canal recebe `trim = target − nível medido` (limitado ao ±limite). Um canal sem sinal em 90 s fica intocado (bateria que não completa as N batidas em 90 s finaliza com o que capturou). Canal com pico abaixo de **-60 dBFS** durante a medição é marcado **"sem sinal"** e ignorado.
+Ao fim, o canal recebe `trim = target − nível medido` (limitado ao ±limite). Um canal sem sinal em 90 s fica intocado. Canal com pico abaixo de **-60 dBFS** durante a medição é marcado **"sem sinal"** e ignorado.
 
 Há **dois modos de medição, com parâmetros independentes no painel**, mais um switch por canal para calibrar pela média ou pelo pico.
 
 ### Instrumentos (contínuos) vs bateria (percussivos)
 
 - **Instrumentos (contínuos)** — medem por uma **janela em segundos** (padrão 5 s) que só conta enquanto há sinal acima da Sensibilidade: a média dos picos de blocos de 0.5 s.
-- **Bateria (percussivos)** — medem por **contagem de batidas** (padrão 15, ajustável de 3 a 60), totalmente independente dos segundos. Um tom/surdo toca em momentos isolados, então "N batidas limpas capturadas" é o critério que faz sentido, não tempo de relógio. Usa a **média com gate dos picos das batidas** (estilo BS.1770): batidas mais de 6 dB abaixo da referência — o P90 das batidas, ou o 2º hit mais forte quando há poucas — são vazamento/ghost notes e ficam fora da média; um rimshot isolado nunca vira a referência.
+- **Bateria (percussivos)** — medem por uma **janela de escuta** (padrão 60 s, ajustável de 20 a 120 s no campo "Medição — bateria (s)" do painel), não por contagem de batidas. Uma fonte como o tom pode entrar só no primeiro refrão da música; uma meta de "N batidas" fecharia em cima do vazamento do resto do kit antes de o tom tocar, ou exigiria um número de batidas irreal. No **modo pico** (padrão) esperar a janela é seguro: o toque direto é, por construção, o som mais alto naquele microfone, então vazamento nunca vence — só precisa de tempo para acontecer. Uma batida solitária muito mais alta que as demais (esbarrão no mic, baqueta na borda) não vira sozinha a referência — precisa de uma segunda batida próxima que a corrobore, senão o pico seguinte é usado. No **modo média**, o nível ainda usa a **média com gate dos picos das batidas** (estilo BS.1770): batidas mais de 6 dB abaixo da referência — o P90 das batidas, ou o 2º hit mais forte quando há poucas — são vazamento/ghost notes e ficam fora da média.
+  - **Armagem relativa ao próprio ruído do canal**: em vez de um limiar fixo em dBFS, a bateria arma **15 dB acima do piso do próprio canal** (vazamento sustentado + ruído de fundo, medido continuamente, não só durante a medição). Mudar o ganho do pré-amp antes do AutoTrim desloca o piso e as batidas juntos — a decisão não muda. Um canal só com ruído nunca arma e termina "sem sinal", sem aplicar ganho nenhum.
+  - **Botão "Concluir agora"** (no plugin do canal e na linha do painel) encerra a janela na hora com o que já foi capturado, sem esperar o resto do tempo — útil assim que o tom tocar o suficiente. No modo compacto, o mesmo botão que mede/cancela vira "Fim" durante uma medição de bateria; cancelar de verdade (descartando a captura) continua disponível no painel completo.
 
 ### Média vs pico mais alto
 
@@ -59,12 +61,12 @@ Vale só no modo **média** (o modo pico já calibra pelo mais alto). Depois de 
 
 ### Sensibilidade e vazamento
 
-- A janela **só conta enquanto há sinal acima da Sensibilidade** — uma pausa não consome o tempo, então o padrão pode ser curto (5 s) mesmo para fontes com respiros.
-- Canal com muito vazamento: suba a Sensibilidade dele acima do vazamento para que só o toque direto dispare a medição.
+- A janela **só conta enquanto há sinal acima da Sensibilidade** — uma pausa não consome o tempo, então o padrão pode ser curto (5 s) mesmo para fontes com respiros. Vale para **instrumentos/voz**; em **bateria** a medição arma pelo piso do próprio canal (ver acima), e a Sensibilidade governa só o rider (abaixo).
+- Canal de instrumento/voz com muito vazamento: suba a Sensibilidade dele acima do vazamento para que só o toque direto dispare a medição.
 
 ### Regulagem individual e reset
 
-- Além do "Regular ganhos de todos os canais", há regulagem individual: botão **"Regular ganho"** no plugin do canal e botão **"Reg"** em cada linha do painel/modo compacto.
+- Além do "Regular ganhos de todos os canais", há regulagem individual: botão **"Regular ganho"** no plugin do canal e botão **"Reg"** em cada linha do painel/modo compacto. Numa medição de bateria em andamento, o botão **"Concluir agora"** encerra a janela na hora com o que já foi capturado.
 - O botão **"Zerar ganhos"** no painel coloca o Ganho de todos os canais em 0 dB e limpa rider/AGC/proteção (com **confirmação**, para um clique errado não apagar a calibração no meio da live).
 
 ## Modos automáticos ao vivo
@@ -115,7 +117,7 @@ A seção **Avançado** (fechada por padrão no plugin do canal) concentra o que
 | Parâmetro | Padrão | O que faz |
 |---|---|---|
 | **Target** | — (dBFS) | Nível de pico alvo do canal; base do trim (`trim = target − nível medido`) e referência do rider/AGC/Clip Guard. |
-| **Sensibilidade** | por perfil (Voz -45 / Instrumento -50 / Bateria -40 dBFS) | Limiar abaixo do qual o sinal é ignorado — arma a medição, e o rider/AGC não perseguem ruído/vazamento. |
+| **Sensibilidade** | por perfil (Voz -45 / Instrumento -50 / Bateria -40 dBFS) | Limiar abaixo do qual o sinal é ignorado pelo rider/AGC. Em Voz/Instrumento também arma a medição; em **Bateria a medição não usa mais este valor** (arma pelo piso do próprio canal — ver [Medição de ganho](#medição-de-ganho)), então aqui ele só afeta o rider. |
 | **Velocidade do rider** | por perfil (Voz 2.5 / Instrumento 1.5 / Bateria 4 dB/s) | Taxa de subida do rider, 0.5–15 dB/s; a descida mantém a proporção do perfil. |
 | **Tempo do AGC** | 12 s | Tempo de programa fora do target (>3 dB) que caracteriza mudança permanente antes do AGC corrigir; 3–20 s. |
 | **Máx. do AGC** | ±10 dB | Correção máxima que o AGC pode aplicar; 1–20 dB. |
@@ -163,6 +165,10 @@ regressão.
 scripts/docker-build.sh   # compila também o autotrim-sim
 build/autotrim_sim_artefacts/Release/autotrim-sim testdata/guitarra.wav \
     --target -12 --profile instrumento --rider --agc --meas 30 --csv traj.csv
+
+# Canal de bateria (tom): --drumwindow define a janela de escuta (padrão 60 s)
+build/autotrim_sim_artefacts/Release/autotrim-sim testdata/tom.wav \
+    --target -10 --profile bateria --drumwindow 60 --csv traj.csv
 ```
 
 Coloque os arquivos em `testdata/` (ignorado pelo git). O CSV opcional tem a
@@ -171,12 +177,15 @@ trajetória por bloco (entrada, saída, trim, rider, AGC, clip) para plotar.
 ## Roadmap
 
 - **Sidechain de música (estilo Vocal Rider)**: subir a voz automaticamente quando a banda cresce, alimentando o rider com um sidechain do mix. Pesquisado e especificado, deixado para depois por complexidade × retorno (ver Waves Vocal Rider: parâmetro "Music Sensitivity").
-- Aproximação de "Spill" (rejeição de vazamento) mais inteligente que o threshold de sensibilidade, se necessário na prática.
+- **Aprender o vazamento de bateria pelas outras peças**: quando o bumbo/caixa dispara e um canal de tom não tem toque direto, o que aparece no mic do tom é vazamento por definição — dá para medir esse vazamento dentro do próprio canal (sem comparar nível entre canais, que já foi tentado e revertido por pré-amps não serem comparáveis). Precisa degradar bem quando bumbo/caixa não têm AutoTrim inserido.
+- Levar a armagem relativa ao piso e o passa-alta do detector também para o **rider de bateria** (hoje só a medição usa esse critério; o rider continua na Sensibilidade absoluta).
+- Aproximação de "Spill" (rejeição de vazamento) mais inteligente para instrumentos/voz, se necessário na prática.
 
 ## Limitações conhecidas
 
 - O painel enxerga apenas instâncias carregadas **no mesmo processo** do host. Funciona no Logic (AUv2 in-process, padrão), Reaper, Bitwig etc.; não funciona se o host isolar plugins em processos separados (sandbox AUv3, "separate process" do Bitwig).
 - Waves eMotion LV1 não aceita plugins de terceiros; para uso ao vivo, uma opção é o Waves SuperRack Performer (VST3).
+- A armagem relativa da medição de bateria depende de o vazamento sustentado ficar pelo menos ~15 dB abaixo do toque direto no próprio microfone. Num kit muito abafado ou mic mal posicionado, onde esse vão não existe, a medição captura vazamento demais como se fossem batidas — o sintoma é visível (contador de batidas subindo rápido demais) e o ajuste, por ora, é de posicionamento/mixagem, não um parâmetro no painel.
 
 ## Estrutura do projeto
 
