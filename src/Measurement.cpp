@@ -3,15 +3,25 @@
 #include "Dsp.h"
 #include "Registry.h"
 
+#include <algorithm>
+
 namespace autotrim::measurement
 {
 namespace
 {
-    bool running = false;
-    double armDeadlineMs = 0.0;
-    std::vector<std::shared_ptr<ChannelShared>> involved;
+    // Mass-batch bookkeeping only — for the panel's progress bar and
+    // Cancelar button. Individual per-channel measurements are tracked
+    // purely on the channel itself (measuring/measArmDeadlineMs) and never
+    // touch this state, which is what keeps them independent of each other.
+    bool massRunning = false;
+    std::vector<std::shared_ptr<ChannelShared>> massInvolved;
 
-    void arm(ChannelShared& ch)
+    double newDeadlineMs()
+    {
+        return juce::Time::getMillisecondCounterHiRes() + dsp::kMeasArmTimeoutS * 1000.0;
+    }
+
+    void arm(ChannelShared& ch, double deadlineMs)
     {
         ch.measEpoch.fetch_add(1);
         ch.measuredPeak.store(0.0f);
@@ -19,6 +29,7 @@ namespace
         ch.measStarted.store(false);
         ch.measDone.store(false);
         ch.measHitCount.store(0);
+        ch.measArmDeadlineMs.store(deadlineMs);
         ch.measuring.store(true);
     }
 
@@ -49,43 +60,49 @@ namespace
             ch.noSignal.store(true);
     }
 
-    void begin()
+    // Stops a channel's measurement without resolving it into a trim — used
+    // by every cancel path.
+    void stopMeasuring(ChannelShared& ch)
     {
-        running = true;
-        armDeadlineMs =
-            juce::Time::getMillisecondCounterHiRes() + dsp::kMeasArmTimeoutS * 1000.0;
+        ch.measuring.store(false);
+        ch.measDone.store(false);
     }
 } // namespace
 
 void start(float)
 {
-    if (running)
+    // The mass batch itself is single-flight (re-clicking it mid-batch is a
+    // no-op); this does NOT gate individual per-channel measurements below.
+    if (massRunning)
         return;
-    involved.clear();
+    const double deadline = newDeadlineMs();
+    massInvolved.clear();
     for (auto& ch : registry::channels())
     {
-        if (! ch->isAutomationOn())
-            continue;
-        arm(*ch);
-        involved.push_back(ch);
+        if (! ch->isAutomationOn() || ch->measuring.load())
+            continue; // off, or already mid-measurement on its own — leave it alone
+        arm(*ch, deadline);
+        massInvolved.push_back(ch);
     }
-    begin();
+    massRunning = ! massInvolved.empty();
 }
 
 void startChannel(const std::shared_ptr<ChannelShared>& channel, float)
 {
-    if (running || channel == nullptr)
-        return;
-    involved.clear();
-    arm(*channel);
-    involved.push_back(channel);
-    begin();
+    if (channel == nullptr || channel->measuring.load())
+        return; // already has a measurement running (its own, or in a mass batch)
+    arm(*channel, newDeadlineMs());
 }
 
 void resetAll()
 {
-    if (running)
-        cancel();
+    // Every channel, mass or individual: zeroing while one is still
+    // mid-measurement would race the trim it's about to apply.
+    for (auto& ch : registry::channels())
+        if (ch->measuring.load())
+            stopMeasuring(*ch);
+    massInvolved.clear();
+    massRunning = false;
     for (auto& ch : registry::channels())
     {
         applyTrim(*ch, 0.0f); // Ganho -> 0 dB, clears rider/AGC/protection
@@ -95,65 +112,65 @@ void resetAll()
 
 void cancel()
 {
-    if (! running)
+    for (auto& ch : massInvolved)
+        stopMeasuring(*ch);
+    massInvolved.clear();
+    massRunning = false;
+}
+
+void cancelChannel(const std::shared_ptr<ChannelShared>& channel)
+{
+    if (channel == nullptr)
         return;
-    running = false;
-    for (auto& ch : involved)
-    {
-        ch->measuring.store(false);
-        ch->measDone.store(false);
-    }
-    involved.clear();
+    stopMeasuring(*channel);
+    massInvolved.erase(std::remove(massInvolved.begin(), massInvolved.end(), channel),
+                       massInvolved.end());
 }
 
 void poll()
 {
-    if (! running)
-        return;
-
+    const double now = juce::Time::getMillisecondCounterHiRes();
     const float maxTrim = registry::maxTrimDb.load();
-    const bool timedOut = juce::Time::getMillisecondCounterHiRes() > armDeadlineMs;
-    bool anyPending = false;
 
-    for (auto& ch : involved)
+    // Every channel is checked, not just the last mass batch: an
+    // individually-started measurement must finish/time out on its own too.
+    for (auto& ch : registry::channels())
     {
         if (ch->measDone.exchange(false))
         {
             finishChannel(*ch, maxTrim);
         }
-        else if (ch->measuring.load())
+        else if (ch->measuring.load() && now > ch->measArmDeadlineMs.load())
         {
-            if (timedOut)
-            {
-                // Whatever was captured decides: never-started channels have
-                // peak 0 -> "sem sinal", untouched.
-                ch->measuring.store(false);
-                finishChannel(*ch, maxTrim);
-            }
-            else
-            {
-                anyPending = true;
-            }
+            // Whatever was captured decides: never-started channels have
+            // peak 0 -> "sem sinal", untouched.
+            ch->measuring.store(false);
+            finishChannel(*ch, maxTrim);
         }
     }
 
-    if (! anyPending)
+    if (massRunning)
     {
-        running = false;
-        involved.clear();
+        const bool anyPending = std::any_of(massInvolved.begin(), massInvolved.end(),
+                                            [](const auto& ch) { return ch->measuring.load(); });
+        if (! anyPending)
+        {
+            massRunning = false;
+            massInvolved.clear();
+        }
     }
 }
 
-bool isRunning() { return running; }
+bool isRunning() { return massRunning; }
 
 float progress()
 {
-    if (! running || involved.empty())
-        return running ? 0.0f : -1.0f;
+    if (! massRunning || massInvolved.empty())
+        return massRunning ? 0.0f : -1.0f;
     int finished = 0;
-    for (auto& ch : involved)
+    for (auto& ch : massInvolved)
         if (! ch->measuring.load())
             ++finished;
-    return (float) finished / (float) involved.size();
+    return (float) finished / (float) massInvolved.size();
 }
 } // namespace autotrim::measurement

@@ -76,6 +76,8 @@ namespace
     }
 
     // Small per-row "regulate this channel" button (panel + compact rows).
+    // Always available: this channel's own measurement never depends on
+    // whether a mass batch or another channel is currently measuring.
     void styleRegButton(juce::TextButton& button, const std::shared_ptr<ChannelShared>& shared)
     {
         button.setButtonText("Reg");
@@ -84,8 +86,8 @@ namespace
         button.onClick = [shared]
         {
             if (shared->measuring.load())
-                measurement::cancel();
-            else if (! measurement::isRunning())
+                measurement::cancelChannel(shared);
+            else
                 measurement::startChannel(shared, registry::measDurationS.load());
         };
     }
@@ -94,7 +96,7 @@ namespace
     {
         const bool mine = shared.measuring.load();
         button.setButtonText(mine ? "X" : "Reg");
-        button.setEnabled(! measurement::isRunning() || mine);
+        button.setEnabled(true);
     }
 
     void writeBoolParam(juce::RangedAudioParameter* param, bool value)
@@ -503,8 +505,8 @@ ChannelView::ChannelView(AutoTrimProcessor& processor)
     measureButton.onClick = [this]
     {
         if (proc.shared->measuring.load())
-            measurement::cancel();
-        else if (! measurement::isRunning())
+            measurement::cancelChannel(proc.shared);
+        else
             measurement::startChannel(proc.shared, registry::measDurationS.load());
     };
 
@@ -669,7 +671,7 @@ void ChannelView::refresh()
                            + juce::String(registry::measHits.load()) + " hits)";
     }
     measureButton.setButtonText(measureText);
-    measureButton.setEnabled(! measurement::isRunning() || proc.shared->measuring.load());
+    measureButton.setEnabled(true); // always available, independent of any other measurement
 
     // The big readout mirrors the fader; the rider's live correction is shown
     // separately so the two never disagree.
@@ -936,16 +938,24 @@ MiniPanelRow::MiniPanelRow(std::shared_ptr<ChannelShared> channel) : shared(std:
     gainLabel.setFont(juce::Font(juce::FontOptions(12.5f, juce::Font::bold)));
     gainLabel.setJustificationType(juce::Justification::centredRight);
     styleRegButton(regButton, shared);
+
+    // Quick include/exclude from "Regular ganhos de todos os canais" without
+    // leaving the compact view — e.g. a channel that's off for this song.
+    automationToggle.onClick = [this]
+    { writeBoolParam(shared->automationParam, automationToggle.getToggleState()); };
+
     addAndMakeVisible(nameLabel);
     addAndMakeVisible(gainLabel);
     addAndMakeVisible(outMeter);
     addAndMakeVisible(regButton);
+    addAndMakeVisible(automationToggle);
 }
 
 void MiniPanelRow::resized()
 {
     auto r = getLocalBounds().reduced(2);
-    nameLabel.setBounds(r.removeFromLeft(72));
+    automationToggle.setBounds(r.removeFromLeft(20).withSizeKeepingCentre(18, 18));
+    nameLabel.setBounds(r.removeFromLeft(60));
     regButton.setBounds(r.removeFromRight(42).reduced(0, 2));
     r.removeFromRight(6);
     gainLabel.setBounds(r.removeFromLeft(52));
@@ -956,6 +966,7 @@ void MiniPanelRow::resized()
 void MiniPanelRow::refresh()
 {
     nameLabel.setText(shared->displayName(), juce::dontSendNotification);
+    automationToggle.setToggleState(shared->isAutomationOn(), juce::dontSendNotification);
     refreshRegButton(regButton, *shared);
     // Red name = overload protection engaged on this channel.
     nameLabel.setColour(juce::Label::textColourId,

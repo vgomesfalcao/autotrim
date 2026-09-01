@@ -51,6 +51,9 @@ struct ChannelShared
     std::atomic<bool> panelMode { false };
     std::atomic<bool> panelCompact { false };
     std::atomic<bool> measuring { false };
+    // Arm timeout for THIS channel's own measurement (independent of every
+    // other channel — one channel's window never blocks another's).
+    std::atomic<double> measArmDeadlineMs { 0.0 };
     // Armed measurement handshake: audio thread flips measStarted when signal
     // arrives and measDone when the window completes.
     std::atomic<bool> measStarted { false };

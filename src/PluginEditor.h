@@ -159,6 +159,9 @@ private:
     juce::Label nameLabel, gainLabel;
     MeterBar outMeter;
     juce::TextButton regButton;
+    // Quick include/exclude from "Regular ganhos de todos os canais" without
+    // leaving the compact view — mirrors PanelRow's automationToggle.
+    juce::ToggleButton automationToggle;
 };
 
 // Minimal panel for piloting the live show: measure button + one meter per
