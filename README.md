@@ -154,7 +154,7 @@ Valide com `auval -v aufx Atrm Vgfa` e abra o Logic (se não aparecer, reinicie 
 
 ## Simulador offline (testar com lives gravadas)
 
-O alvo `autotrim-sim` roda o **processor real** sobre um WAV/AIFF (um canal
+O alvo `autotrim-sim` roda o **processor real** sobre um WAV/AIFF/MP3 (um canal
 gravado de uma live) e imprime a trajetória do ganho com timestamp: medição,
 correções e bail-outs do AGC, cortes do Clip Guard, e **bumps** (variação de
 ganho > 3 dB em 100 ms fora da aplicação da medição). Sai com código 0 quando

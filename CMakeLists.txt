@@ -67,6 +67,9 @@ target_include_directories(autotrim_sim PRIVATE src)
 target_compile_definitions(autotrim_sim PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    # Dev tool only (not shipped in the plugin): lets testdata/ take MP3
+    # exports of recorded live multitracks, not just WAV/AIFF.
+    JUCE_USE_MP3AUDIOFORMAT=1
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_MODAL_LOOPS_PERMITTED=1)
 target_link_libraries(autotrim_sim PRIVATE
